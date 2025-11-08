@@ -29,8 +29,6 @@
         "@typescript-eslint/parser": "^8.46.3",
         "@vscode/vsce": "^3.7.0",
         "eslint": "^9.39.1",
-      },
-      "peerDependencies": {
         "typescript": "^5.9.3",
       },
     },

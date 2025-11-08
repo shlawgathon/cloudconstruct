@@ -1,8 +1,121 @@
 {
-  "name": "vscode-extension",
-  "module": "index.ts",
-  "type": "module",
-  "private": true,
+  "name": "vscode-ai-excalidraw-extension",
+  "displayName": "CloudConstruct AI Excalidraw Extension",
+  "description": "AI-powered infrastructure prototyping with visual feedback",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.105.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vscodeAiExcalidraw.login",
+        "title": "Login",
+        "category": "CloudConstruct"
+      },
+      {
+        "command": "vscodeAiExcalidraw.signup",
+        "title": "Sign Up",
+        "category": "CloudConstruct"
+      },
+      {
+        "command": "vscodeAiExcalidraw.openBrowser",
+        "title": "Open in Browser",
+        "category": "CloudConstruct"
+      },
+      {
+        "command": "vscodeAiExcalidraw.showStatus",
+        "title": "Show Status",
+        "category": "CloudConstruct"
+      },
+      {
+        "command": "vscodeAiExcalidraw.checkCluster",
+        "title": "Check Cluster",
+        "category": "CloudConstruct"
+      }
+    ],
+    "views": {
+      "vscodeAiExcalidraw": [
+        {
+          "id": "vscodeAiExcalidraw.loginView",
+          "name": "Login",
+          "when": "true"
+        },
+        {
+          "id": "vscodeAiExcalidraw.clusterStatus",
+          "name": "Cluster Status",
+          "when": "true"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vscodeAiExcalidraw",
+          "title": "CloudConstruct",
+          "icon": "$(server)"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "vscodeAiExcalidraw.clusterStatus",
+        "contents": "No cluster status available.\n[Login](command:vscodeAiExcalidraw.login) to get started."
+      }
+    ],
+    "configuration": {
+      "title": "CloudConstruct",
+      "properties": {
+        "cloudconstruct.workerUrl": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "Worker service URL"
+        },
+        "cloudconstruct.autoCheck": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically check cluster status"
+        },
+        "cloudconstruct.nextJsUrl": {
+          "type": "string",
+          "default": "http://localhost:3001",
+          "description": "Next.js dev server URL"
+        }
+      }
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "vscodeAiExcalidraw.checkCluster",
+          "when": "view == vscodeAiExcalidraw.clusterStatus",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "vscodeAiExcalidraw.showStatus",
+          "when": "view == vscodeAiExcalidraw.clusterStatus && viewItem == cluster",
+          "group": "inline"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "bun run compile && cd ui-app && bun run build",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "lint": "eslint src --ext ts",
+    "ui:dev": "cd ui-app && bun run dev",
+    "ui:build": "cd ui-app && bun run build"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/glob": "^9.0.0",
@@ -12,9 +125,7 @@
     "@typescript-eslint/eslint-plugin": "^8.46.3",
     "@typescript-eslint/parser": "^8.46.3",
     "@vscode/vsce": "^3.7.0",
-    "eslint": "^9.39.1"
-  },
-  "peerDependencies": {
+    "eslint": "^9.39.1",
     "typescript": "^5.9.3"
   },
   "dependencies": {

@@ -6,6 +6,10 @@ out
 dist
 *.tgz
 
+# Next.js build output
+ui-app/.next
+ui-app/out
+
 # code coverage
 coverage
 *.lcov
