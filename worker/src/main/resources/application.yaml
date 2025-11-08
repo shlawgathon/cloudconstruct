@@ -5,6 +5,11 @@ ktor:
   deployment:
     port: 5353
 
+# Gemini configuration
+gemini:
+  apiKey: "" # set your API key here or via env-specific yaml
+  model: "gemini-2.5-flash"
+
 # Database configuration
 db:
   mongo:
