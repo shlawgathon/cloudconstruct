@@ -1,0 +1,14 @@
+ktor:
+  application:
+    modules:
+      - ApplicationKt.module
+  deployment:
+    port: 5353
+
+# Database configuration
+db:
+  mongo:
+    host: 127.0.0.1
+    port: 27017
+    database:
+      name: cloudconstruct-live
