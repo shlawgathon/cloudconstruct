@@ -4,6 +4,8 @@ import index from "./index.html";
 const server = serve({
   port: 3001,
   routes: {
+    // Serve logo.png as static asset
+    "/logo.png": Bun.file("./src/logo.png"),
     // Serve index.html for all unmatched routes.
     "/*": index,
 

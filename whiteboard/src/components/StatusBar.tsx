@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { WorkerClient, type ConnectionState } from '../services/WorkerClient';
+import logoImage from '../../logo.png';
 
 interface StatusBarProps {
   onLoginClick: () => void;
@@ -39,6 +40,15 @@ export function StatusBar({ onLoginClick }: StatusBarProps) {
       padding: '0 12px', background: 'white', borderBottom: '1px solid #e5e7eb', zIndex: 1000
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <img
+          src={logoImage}
+          alt="CloudConstruct Logo"
+          style={{
+            height: "24px",
+            width: "24px",
+            objectFit: "contain",
+          }}
+        />
         <span style={{ fontWeight: 600 }}>CloudConstruct</span>
         <span style={{ fontSize: 12, color }}>
           {conn === 'connected' ? 'Connected' : conn === 'connecting' ? 'Connecting…' : conn === 'error' ? 'Error' : 'Disconnected'}
