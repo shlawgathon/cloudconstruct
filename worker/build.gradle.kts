@@ -54,5 +54,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.1")
 
     testImplementation("io.ktor:ktor-server-test-host")
+    testImplementation("io.ktor:ktor-client-websockets")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version")
 }

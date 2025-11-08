@@ -111,7 +111,31 @@ export type ErrorHandler = (error: Error) => void;
  * Base WebSocket Client for communicating with the Kotlin worker
  */
 export class WorkerWSClient {
-    private ws: WebSocket | null = null;
+    // Cross-runtime helpers
+    private getWebSocketConstructor = async (): Promise<any> => {
+        // Browser or runtimes exposing global WebSocket
+        const g: any = globalThis as any;
+        if (typeof g.WebSocket !== 'undefined') {
+            return g.WebSocket;
+        }
+        // Node.js: dynamically import 'ws' to avoid bundling it in the browser build
+        const mod: any = await import('ws');
+        const WS = mod.WebSocket || mod.default || mod;
+        if (!WS) {
+            throw new Error('Unable to load WebSocket implementation');
+        }
+        return WS;
+    };
+
+    private toBase64 = (str: string): string => {
+        const g: any = globalThis as any;
+        if (typeof g.btoa === 'function') {
+            return g.btoa(str);
+        }
+        // Node.js
+        return Buffer.from(str, 'utf-8').toString('base64');
+    };
+    private ws: any = null;
     private sessionToken: string | null = null;
     private reconnectAttempts = 0;
     private maxReconnectAttempts = 5;
@@ -139,16 +163,18 @@ export class WorkerWSClient {
         const response = await fetch(authUrl, {
             method: 'POST',
             headers: {
-                'Authorization': 'Basic ' + btoa(`${username}:${password}`),
-                'Content-Type': 'application/json'
+                'Authorization': 'Basic ' + this.toBase64(`${username}:${password}`)
             }
         });
 
         if (!response.ok) {
-            throw new Error(`Authentication failed: ${response.statusText}`);
+            throw new Error(`Authentication failed: ${response.status} ${response.statusText}`);
         }
 
-        const data: AuthResponse | unknown = await response.json();
+        const data: any = await response.json();
+        if (!data || typeof data.sessionToken !== 'string') {
+            throw new Error('Invalid authentication response: missing sessionToken');
+        }
         this.sessionToken = data.sessionToken;
         return data.sessionToken;
     }
@@ -169,12 +195,14 @@ export class WorkerWSClient {
             throw new Error('No session token available. Please authenticate first.');
         }
 
-        return new Promise((resolve, reject) => {
+        return new Promise(async (resolve, reject) => {
             try {
+                const WS = await this.getWebSocketConstructor();
                 const wsEndpoint = this.clientType === 'vsc' ? '/ws/vsc' : '/ws/excalidraw';
-                this.ws = new WebSocket(`${this.workerUrl}${wsEndpoint}`);
+                const url = `${this.workerUrl}${wsEndpoint}`;
+                this.ws = new WS(url);
 
-                this.ws.onopen = () => {
+                const handleOpen = () => {
                     console.log(`Connected to worker as ${this.clientType}`);
                     this.isConnected = true;
                     this.reconnectAttempts = 0;
@@ -200,9 +228,10 @@ export class WorkerWSClient {
                     resolve();
                 };
 
-                this.ws.onmessage = (event) => {
+                const handleMessage = (data: any) => {
                     try {
-                        const message = JSON.parse(event.data) as WSMessage;
+                        const raw = typeof data === 'string' ? data : (data?.data ?? data);
+                        const message = JSON.parse(raw) as WSMessage;
                         this.handleMessage(message);
                     } catch (error) {
                         console.error('Failed to parse message:', error);
@@ -210,13 +239,13 @@ export class WorkerWSClient {
                     }
                 };
 
-                this.ws.onerror = (error) => {
+                const handleError = (error: any) => {
                     console.error('WebSocket error:', error);
                     this.errorHandlers.forEach(handler => handler(new Error('WebSocket error')));
                     reject(new Error('WebSocket connection failed'));
                 };
 
-                this.ws.onclose = () => {
+                const handleClose = () => {
                     console.log('WebSocket connection closed');
                     this.isConnected = false;
                     this.disconnectionHandlers.forEach(handler => handler());
@@ -226,6 +255,25 @@ export class WorkerWSClient {
                         this.reconnect();
                     }
                 };
+
+                // Attach handlers for browser or Node ws
+                if (typeof this.ws.addEventListener === 'function') {
+                    this.ws.addEventListener('open', handleOpen);
+                    this.ws.addEventListener('message', (evt: any) => handleMessage(evt.data));
+                    this.ws.addEventListener('error', handleError);
+                    this.ws.addEventListener('close', handleClose);
+                } else if (typeof this.ws.on === 'function') {
+                    this.ws.on('open', handleOpen);
+                    this.ws.on('message', (data: any) => handleMessage(data));
+                    this.ws.on('error', handleError);
+                    this.ws.on('close', handleClose);
+                } else {
+                    // Fallback to direct assignment if supported
+                    (this.ws as any).onopen = handleOpen;
+                    (this.ws as any).onmessage = (evt: any) => handleMessage(evt?.data ?? evt);
+                    (this.ws as any).onerror = handleError;
+                    (this.ws as any).onclose = handleClose;
+                }
             } catch (error) {
                 reject(error);
             }
@@ -252,14 +300,20 @@ export class WorkerWSClient {
     /**
      * Send a message
      */
-    send(message: Omit<WSMessage, 'type'> & { type: string }): void {
+    send(message: WSMessage): void {
         if (!this.isConnected) {
             this.messageQueue.push(message as WSMessage);
             return;
         }
 
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify(message));
+        const OPEN_STATE = 1; // WebSocket.OPEN in both browser and 'ws'
+        if (this.ws && this.ws.readyState === OPEN_STATE) {
+            try {
+                this.ws.send(JSON.stringify(message));
+            } catch (err) {
+                // If send fails, re-queue to attempt after reconnect
+                this.messageQueue.push(message as WSMessage);
+            }
         } else {
             this.messageQueue.push(message as WSMessage);
         }
@@ -451,7 +505,7 @@ export class ExcalidrawWorkerClient extends WorkerWSClient {
 export class WhiteboardMonitor {
     private client: ExcalidrawWorkerClient;
     private interval: number;
-    private timer: NodeJS.Timeout | null = null;
+    private timer: ReturnType<typeof setInterval> | null = null;
     private getElements: () => WhiteboardElement[];
     private getScreenshot: () => string | undefined;
     private lastElementsHash: string = '';

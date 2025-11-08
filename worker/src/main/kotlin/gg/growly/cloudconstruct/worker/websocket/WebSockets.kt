@@ -1,4 +1,5 @@
 import gg.growly.cloudconstruct.worker.UserSession
+import gg.growly.cloudconstruct.worker.globalJson
 import gg.growly.cloudconstruct.worker.mongoDatabase
 import gg.growly.cloudconstruct.worker.websocket.AuthResponse
 import gg.growly.cloudconstruct.worker.websocket.ConnectionManager
@@ -14,7 +15,6 @@ import io.ktor.server.routing.*
 import io.ktor.server.sessions.*
 import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.*
-import kotlinx.serialization.json.Json
 
 fun Application.configureWebSockets() {
     val db = mongoDatabase()
@@ -46,7 +46,7 @@ fun Application.configureWebSockets() {
             try {
                 val authFrame = incoming.receive()
                 if (authFrame is Frame.Text) {
-                    val authMsg = Json.decodeFromString<WSMessage.Auth>(authFrame.readText())
+                    val authMsg = globalJson.decodeFromString<WSMessage.Auth>(authFrame.readText())
                     sessionToken = authMsg.token
                     val sess = connectionManager.validateSession(sessionToken!!)
                     if (sess == null || sess.connectionType != ConnectionManager.ConnectionType.VSC) {
@@ -57,7 +57,7 @@ fun Application.configureWebSockets() {
                     for (frame in incoming) {
                         if (frame is Frame.Text) {
                             val text = frame.readText()
-                            val message = Json.decodeFromString<WSMessage>(text)
+                            val message = globalJson.decodeFromString<WSMessage>(text)
                             handler.handleVSCMessage(message, this, sessionToken!!)
                         }
                     }
@@ -74,7 +74,7 @@ fun Application.configureWebSockets() {
             try {
                 val authFrame = incoming.receive()
                 if (authFrame is Frame.Text) {
-                    val authMsg = Json.decodeFromString<WSMessage.Auth>(authFrame.readText())
+                    val authMsg = globalJson.decodeFromString<WSMessage.Auth>(authFrame.readText())
                     sessionToken = authMsg.token
                     val sess = connectionManager.validateSession(sessionToken!!)
                     if (sess == null || sess.connectionType != ConnectionManager.ConnectionType.EXCALIDRAW) {
@@ -85,7 +85,7 @@ fun Application.configureWebSockets() {
                     for (frame in incoming) {
                         if (frame is Frame.Text) {
                             val text = frame.readText()
-                            val message = Json.decodeFromString<WSMessage>(text)
+                            val message = globalJson.decodeFromString<WSMessage>(text)
                             handler.handleExcalidrawMessage(message, this, sessionToken!!)
                         }
                     }

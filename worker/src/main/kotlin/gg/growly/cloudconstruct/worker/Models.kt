@@ -20,11 +20,10 @@ data class User(
     val username: String,
     val passwordHash: String
 ) {
-    fun toDocument(): Document = Document.parse(json.encodeToString(this))
+    fun toDocument(): Document = Document.parse(globalJson.encodeToString(this))
 
     companion object {
-        private val json = Json { ignoreUnknownKeys = true }
-        fun fromDocument(document: Document): User = json.decodeFromString(document.toJson())
+        fun fromDocument(document: Document): User = globalJson.decodeFromString(document.toJson())
         fun hashPassword(password: String): String {
             val md = MessageDigest.getInstance("SHA-256")
             val digest = md.digest(password.toByteArray())

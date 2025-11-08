@@ -33,7 +33,7 @@ class AuthE2ETest {
 
         // Use a client that keeps cookies to preserve the session across requests
         val client: HttpClient = createClient {
-            HttpClientConfig.install(HttpCookies.Companion)
+            install(HttpCookies)
             install(ContentNegotiation) { json() }
         }
 
@@ -95,7 +95,7 @@ class AuthE2ETest {
         application { module() }
 
         val client: HttpClient = createClient {
-            HttpClientConfig.install(HttpCookies.Companion)
+            install(HttpCookies)
             install(ContentNegotiation) { json() }
         }
 

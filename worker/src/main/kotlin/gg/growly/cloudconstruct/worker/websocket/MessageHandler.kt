@@ -1,7 +1,7 @@
 package gg.growly.cloudconstruct.worker.websocket
 
+import gg.growly.cloudconstruct.worker.globalJson
 import io.ktor.websocket.*
-import kotlinx.serialization.json.Json
 import org.bson.Document
 
 class MessageHandler(
@@ -9,8 +9,6 @@ class MessageHandler(
     private val repo: WsRepository,
     private val gemini: GeminiService
 ) {
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-
     suspend fun handleVSCMessage(message: WSMessage, session: WebSocketSession, token: String) {
         when (message) {
             is WSMessage.FileOperation -> handleFileOperation(message, session)
@@ -30,12 +28,12 @@ class MessageHandler(
 
     private suspend fun handleFileOperation(message: WSMessage.FileOperation, session: WebSocketSession) {
         val response = when (message.operation) {
-            "list" -> json.encodeToString(mapOf("files" to listOf("file1.ts", "file2.ts")))
-            "read" -> json.encodeToString(mapOf("content" to "file content here"))
-            "create", "update" -> json.encodeToString(mapOf("success" to true))
-            "delete" -> json.encodeToString(mapOf("success" to true))
-            "search" -> json.encodeToString(mapOf("results" to listOf("match1", "match2")))
-            else -> json.encodeToString(mapOf("error" to "Unknown operation"))
+            "list" -> globalJson.encodeToString(mapOf("files" to listOf("file1.ts", "file2.ts")))
+            "read" -> globalJson.encodeToString(mapOf("content" to "file content here"))
+            "create", "update" -> globalJson.encodeToString(mapOf("success" to true))
+            "delete" -> globalJson.encodeToString(mapOf("success" to true))
+            "search" -> globalJson.encodeToString(mapOf("results" to listOf("match1", "match2")))
+            else -> globalJson.encodeToString(mapOf("error" to "Unknown operation"))
         }
         session.send(Frame.Text(response))
     }
@@ -43,7 +41,7 @@ class MessageHandler(
     private suspend fun handleWhiteboardUpdate(message: WSMessage.WhiteboardUpdate, token: String) {
         val state = Document()
             .append("componentId", message.componentId)
-            .append("elements", json.encodeToString(message.elements))
+            .append("elements", globalJson.encodeToString(message.elements))
             .append("screenshot", message.screenshot)
         repo.saveWhiteboardState(message.componentId, state)
         broadcastToVSC(message, token)
@@ -57,7 +55,7 @@ class MessageHandler(
             specFile = "generated-spec.yaml",
             status = "success"
         )
-        session.send(Frame.Text(json.encodeToString(response)))
+        session.send(Frame.Text(globalJson.encodeToString(response)))
         broadcastToVSC(response, token)
     }
 
@@ -69,7 +67,7 @@ class MessageHandler(
             k8sCode = k8sCode,
             errors = null
         )
-        session.send(Frame.Text(json.encodeToString(response)))
+        session.send(Frame.Text(globalJson.encodeToString(response)))
         broadcastToExcalidraw(
             WSMessage.StatusUpdate(
                 componentId = message.componentId,
@@ -82,7 +80,7 @@ class MessageHandler(
 
     private suspend fun broadcastToVSC(message: WSMessage, excludeToken: String? = null) {
         val sessions = connectionManager.getAllVSCSessions()
-        val payload = json.encodeToString(message)
+        val payload = globalJson.encodeToString(message)
         sessions.forEach { (token, session) ->
             if (token != excludeToken) {
                 try { session.send(Frame.Text(payload)) } catch (e: Exception) { println("Failed to broadcast to VSC: ${e.message}") }
@@ -92,7 +90,7 @@ class MessageHandler(
 
     private suspend fun broadcastToExcalidraw(message: WSMessage, excludeToken: String? = null) {
         val sessions = connectionManager.getAllExcalidrawSessions()
-        val payload = json.encodeToString(message)
+        val payload = globalJson.encodeToString(message)
         sessions.forEach { (token, session) ->
             if (token != excludeToken) {
                 try { session.send(Frame.Text(payload)) } catch (e: Exception) { println("Failed to broadcast to Excalidraw: ${e.message}") }
