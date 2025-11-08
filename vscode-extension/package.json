@@ -4,7 +4,7 @@
   "description": "AI-powered infrastructure prototyping with visual feedback",
   "version": "0.0.1",
   "engines": {
-    "vscode": "^1.105.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Other"
