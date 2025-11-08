@@ -1,37 +1,45 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { APITester } from "./APITester";
+import { useEffect, useRef } from "react";
 import "./index.css";
 
-import logo from "./logo.svg";
-import reactLogo from "./react.svg";
-
+/**
+ * Excalidraw embed test
+ * Uses Excalidraw web embed (iframe) for local testing
+ */
 export function App() {
-  return (
-    <div className="container mx-auto p-8 text-center relative z-10">
-      <div className="flex justify-center items-center gap-8 mb-8">
-        <img
-          src={logo}
-          alt="Bun Logo"
-          className="h-36 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#646cffaa] scale-120"
-        />
-        <img
-          src={reactLogo}
-          alt="React Logo"
-          className="h-36 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#61dafbaa] [animation:spin_20s_linear_infinite]"
-        />
-      </div>
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
-      <Card className="bg-card/50 backdrop-blur-sm border-muted">
-        <CardContent className="pt-6">
-          <h1 className="text-5xl font-bold my-4 leading-tight">Bun + React</h1>
-          <p>
-            Edit{" "}
-            <code className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm">src/App.tsx</code> and
-            save to test HMR
-          </p>
-          <APITester />
-        </CardContent>
-      </Card>
+  useEffect(() => {
+    // Listen for messages from Excalidraw iframe
+    const handleMessage = (event: MessageEvent) => {
+      // Only accept messages from Excalidraw origin
+      if (
+        event.origin !== "https://excalidraw.com" &&
+        event.origin !== "https://embed.excalidraw.com"
+      ) {
+        return;
+      }
+
+      console.log("Message from Excalidraw:", event.data);
+      // Handle Excalidraw events here
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
+
+  return (
+    <div style={{ height: "100vh", width: "100vw", position: "relative" }}>
+      <iframe
+        ref={iframeRef}
+        src="https://excalidraw.com"
+        style={{
+          width: "100%",
+          height: "100%",
+          border: "none",
+        }}
+        title="Excalidraw Whiteboard"
+        allow="clipboard-read; clipboard-write"
+      />
     </div>
   );
 }
