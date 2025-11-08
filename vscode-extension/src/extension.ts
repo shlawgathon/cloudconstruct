@@ -26,13 +26,13 @@ export function activate(context: vscode.ExtensionContext) {
         const config = vscode.workspace.getConfiguration('cloudconstruct');
 
         // Initialize core services
-        const authManager = new AuthManager();
         const workerUrl = config.get<string>('workerUrl', 'http://localhost:3000');
+        const authManager = new AuthManager(context, workerUrl);
         const apiClient = new WorkerApiClient(workerUrl);
         const webSocket = new WorkerWebSocket(workerUrl.replace('http', 'ws'));
 
         // Initialize UI components
-        const loginViewProvider = new LoginViewProvider(extensionUri, context);
+        const loginViewProvider = new LoginViewProvider(extensionUri, context, authManager);
         const statusView = new StatusView();
         const statusBarManager = new StatusBarManager();
         const webviewProvider = new WebviewProvider(extensionUri, context);
@@ -100,6 +100,22 @@ export function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(
             vscode.commands.registerCommand('vscodeAiExcalidraw.checkCluster', async () => {
                 await clusterCheckManager.checkCluster();
+            })
+        );
+
+        context.subscriptions.push(
+            vscode.commands.registerCommand('vscodeAiExcalidraw.logout', async () => {
+                const confirm = await vscode.window.showWarningMessage(
+                    'Are you sure you want to logout?',
+                    { modal: true },
+                    'Logout'
+                );
+
+                if (confirm === 'Logout') {
+                    await authManager.logout();
+                    vscode.window.showInformationMessage('Logged out successfully');
+                    statusBarManager.updateStatus('disconnected');
+                }
             })
         );
 

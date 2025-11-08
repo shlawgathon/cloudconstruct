@@ -39,6 +39,11 @@
         "command": "vscodeAiExcalidraw.checkCluster",
         "title": "Check Cluster",
         "category": "CloudConstruct"
+      },
+      {
+        "command": "vscodeAiExcalidraw.logout",
+        "title": "Logout",
+        "category": "CloudConstruct"
       }
     ],
     "views": {
