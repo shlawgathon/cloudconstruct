@@ -102,7 +102,7 @@ if (window.vscode) {
 The extension configuration (in VS Code settings) affects the UI app:
 
 - `cloudconstruct.nextJsUrl`: Next.js dev server URL (default: `http://localhost:3001`)
-- `cloudconstruct.workerUrl`: Worker service URL (default: `http://localhost:3000`)
+- `cloudconstruct.workerUrl`: Worker service URL (default: `http://0.0.0.0:5353`)
 
 ## Scripts
 

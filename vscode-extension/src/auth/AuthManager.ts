@@ -1,25 +1,18 @@
 import * as vscode from 'vscode';
 import axios, { AxiosError } from 'axios';
+import { VSCodeWorkerClient } from '../client/VSCodeWorkerClientWrapper';
 
 /**
  * Authentication manager for CloudConstruct whiteboard
- * Manages session-based authentication with the worker backend
- * Uses VSCode SecretStorage for secure cookie storage
+ * Manages session token-based authentication with the worker backend
+ * Uses VSCode SecretStorage for secure token storage
+ * Uses the shared API client for authentication
  */
 
-interface LoginRequest {
-    username: string;
-    password: string;
-}
-
-interface RegisterRequest {
-    username: string;
-    password: string;
-    profilePictureBase64?: string;
-}
-
 interface AuthResponse {
-    userId: string;
+    sessionToken: string;
+    expiresAt?: number;
+    userId?: string;
 }
 
 export interface UserInfo {
@@ -28,20 +21,25 @@ export interface UserInfo {
 }
 
 export class AuthManager {
-    private static readonly SESSION_COOKIE_KEY = 'cloudconstruct.session.cookie';
+    private static readonly SESSION_TOKEN_KEY = 'cloudconstruct.session.token';
     private static readonly USER_INFO_KEY = 'cloudconstruct.user.info';
     
-    private sessionCookie: string | null = null;
+    private sessionToken: string | null = null;
     private userInfo: UserInfo | null = null;
     private workerUrl: string;
+    private wsClient: VSCodeWorkerClient;
 
     constructor(
         private readonly context: vscode.ExtensionContext,
-        workerUrl?: string
+        workerUrl?: string,
+        wsClient?: VSCodeWorkerClient
     ) {
         // Get worker URL from config or use default
         const config = vscode.workspace.getConfiguration('cloudconstruct');
-        this.workerUrl = workerUrl || config.get<string>('workerUrl', 'http://localhost:3000');
+        this.workerUrl = workerUrl || config.get<string>('workerUrl', 'http://0.0.0.0:5353');
+        
+        // Create or use provided WebSocket client for authentication
+        this.wsClient = wsClient || new VSCodeWorkerClient(this.workerUrl);
         
         // Load stored session on initialization
         this.loadSession();
@@ -52,14 +50,14 @@ export class AuthManager {
      */
     private async loadSession(): Promise<void> {
         try {
-            // Load session cookie from SecretStorage
-            this.sessionCookie = await this.context.secrets.get(AuthManager.SESSION_COOKIE_KEY) || null;
+            // Load session token from SecretStorage
+            this.sessionToken = await this.context.secrets.get(AuthManager.SESSION_TOKEN_KEY) || null;
             
             // Load user info from global state
             this.userInfo = this.context.globalState.get<UserInfo>(AuthManager.USER_INFO_KEY) || null;
         } catch (error) {
             console.error('Failed to load session:', error);
-            this.sessionCookie = null;
+            this.sessionToken = null;
             this.userInfo = null;
         }
     }
@@ -67,11 +65,11 @@ export class AuthManager {
     /**
      * Save session to secure storage
      */
-    private async saveSession(cookie: string, userInfo: UserInfo): Promise<void> {
+    private async saveSession(token: string, userInfo: UserInfo): Promise<void> {
         try {
-            await this.context.secrets.store(AuthManager.SESSION_COOKIE_KEY, cookie);
+            await this.context.secrets.store(AuthManager.SESSION_TOKEN_KEY, token);
             await this.context.globalState.update(AuthManager.USER_INFO_KEY, userInfo);
-            this.sessionCookie = cookie;
+            this.sessionToken = token;
             this.userInfo = userInfo;
         } catch (error) {
             console.error('Failed to save session:', error);
@@ -84,9 +82,9 @@ export class AuthManager {
      */
     private async clearSession(): Promise<void> {
         try {
-            await this.context.secrets.delete(AuthManager.SESSION_COOKIE_KEY);
+            await this.context.secrets.delete(AuthManager.SESSION_TOKEN_KEY);
             await this.context.globalState.update(AuthManager.USER_INFO_KEY, undefined);
-            this.sessionCookie = null;
+            this.sessionToken = null;
             this.userInfo = null;
         } catch (error) {
             console.error('Failed to clear session:', error);
@@ -95,28 +93,46 @@ export class AuthManager {
 
     /**
      * Register a new user
+     * Uses the shared API client's authenticate method after registration
      */
     async register(username: string, password: string): Promise<{ success: boolean; message: string; userId?: string }> {
         try {
-            const request: RegisterRequest = { username, password };
+            // Convert to base64 for Basic auth
+            const credentials = Buffer.from(`${username}:${password}`).toString('base64');
             
             const response = await axios.post<AuthResponse>(
                 `${this.workerUrl}/auth/register`,
-                request,
+                {},
                 {
                     headers: {
+                        'Authorization': `Basic ${credentials}`,
                         'Content-Type': 'application/json',
                     },
                     validateStatus: (status) => status < 500,
                 }
             );
 
-            if (response.status === 201) {
-                return {
-                    success: true,
-                    message: 'Registration successful',
-                    userId: response.data.userId,
-                };
+            if (response.status === 201 || response.status === 200) {
+                // After successful registration, authenticate to get session token
+                try {
+                    const token = await this.wsClient.authenticate(username, password);
+                    const userInfo: UserInfo = {
+                        id: response.data.userId || username,
+                        username: username,
+                    };
+                    await this.saveSession(token, userInfo);
+                    
+                    return {
+                        success: true,
+                        message: 'Registration successful',
+                        userId: userInfo.id,
+                    };
+                } catch (authError) {
+                    return {
+                        success: false,
+                        message: 'Registration succeeded but authentication failed',
+                    };
+                }
             } else if (response.status === 409) {
                 return {
                     success: false,
@@ -135,60 +151,49 @@ export class AuthManager {
 
     /**
      * Login with username and password
+     * Uses the shared API client's authenticate method
      */
     async login(username: string, password: string): Promise<{ success: boolean; message: string; userId?: string }> {
         try {
-            const request: LoginRequest = { username, password };
+            // Use the shared API client's authenticate method
+            const token = await this.wsClient.authenticate(username, password);
             
-            const response = await axios.post<AuthResponse>(
-                `${this.workerUrl}/auth/login`,
-                request,
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    validateStatus: (status) => status < 500,
+            const userInfo: UserInfo = {
+                id: username, // Will be updated from user info endpoint if available
+                username: username,
+            };
+            
+            await this.saveSession(token, userInfo);
+            
+            // Optionally validate session and get user info
+            try {
+                const isValid = await this.validateSession();
+                if (isValid && this.userInfo) {
+                    userInfo.id = this.userInfo.id;
                 }
-            );
-
-            if (response.status === 200) {
-                // Extract session cookie from Set-Cookie header
-                const setCookieHeader = response.headers['set-cookie'];
-                if (setCookieHeader && setCookieHeader.length > 0) {
-                    // Parse the USER_SESSION cookie
-                    const sessionCookie = this.extractSessionCookie(setCookieHeader);
-                    if (sessionCookie) {
-                        // Save session
-                        const userInfo: UserInfo = {
-                            id: response.data.userId,
-                            username: username,
-                        };
-                        await this.saveSession(sessionCookie, userInfo);
-                        
-                        return {
-                            success: true,
-                            message: 'Login successful',
-                            userId: response.data.userId,
-                        };
-                    }
+            } catch (error) {
+                // Session validation failed, but we have a token so continue
+                console.warn('Session validation failed:', error);
+            }
+            
+            return {
+                success: true,
+                message: 'Login successful',
+                userId: userInfo.id,
+            };
+        } catch (error) {
+            if (error instanceof Error) {
+                if (error.message.includes('401') || error.message.includes('Authentication failed')) {
+                    return {
+                        success: false,
+                        message: 'Invalid username or password',
+                    };
                 }
-                
                 return {
                     success: false,
-                    message: 'Failed to establish session',
-                };
-            } else if (response.status === 401) {
-                return {
-                    success: false,
-                    message: 'Invalid username or password',
-                };
-            } else {
-                return {
-                    success: false,
-                    message: 'Login failed',
+                    message: error.message || 'Login failed',
                 };
             }
-        } catch (error) {
             return this.handleError(error, 'Login failed');
         }
     }
@@ -198,14 +203,14 @@ export class AuthManager {
      */
     async logout(): Promise<void> {
         try {
-            // Call logout endpoint if we have a session
-            if (this.sessionCookie) {
+            // Call logout endpoint if we have a session token
+            if (this.sessionToken) {
                 await axios.post(
                     `${this.workerUrl}/auth/logout`,
                     {},
                     {
                         headers: {
-                            'Cookie': this.sessionCookie,
+                            'Authorization': `Bearer ${this.sessionToken}`,
                         },
                     }
                 ).catch(err => {
@@ -223,14 +228,14 @@ export class AuthManager {
      * Check if user is authenticated
      */
     isAuthenticated(): boolean {
-        return this.sessionCookie !== null && this.userInfo !== null;
+        return this.sessionToken !== null && this.userInfo !== null;
     }
 
     /**
-     * Get session cookie for API requests
+     * Get session token for API requests
      */
-    getSessionCookie(): string | null {
-        return this.sessionCookie;
+    getSessionToken(): string | null {
+        return this.sessionToken;
     }
 
     /**
@@ -244,7 +249,7 @@ export class AuthManager {
      * Validate current session with backend
      */
     async validateSession(): Promise<boolean> {
-        if (!this.sessionCookie) {
+        if (!this.sessionToken) {
             return false;
         }
 
@@ -253,7 +258,7 @@ export class AuthManager {
                 `${this.workerUrl}/user/me`,
                 {
                     headers: {
-                        'Cookie': this.sessionCookie,
+                        'Authorization': `Bearer ${this.sessionToken}`,
                     },
                     validateStatus: (status) => status < 500,
                 }
@@ -277,20 +282,6 @@ export class AuthManager {
             await this.clearSession();
             return false;
         }
-    }
-
-    /**
-     * Extract USER_SESSION cookie from Set-Cookie headers
-     */
-    private extractSessionCookie(setCookieHeaders: string[]): string | null {
-        for (const header of setCookieHeaders) {
-            if (header.startsWith('USER_SESSION=')) {
-                // Extract just the cookie name=value part (before the first semicolon)
-                const cookieValue = header.split(';')[0];
-                return cookieValue;
-            }
-        }
-        return null;
     }
 
     /**
@@ -320,14 +311,21 @@ export class AuthManager {
     }
 
     /**
+     * Get the WebSocket client instance
+     */
+    getWebSocketClient(): VSCodeWorkerClient {
+        return this.wsClient;
+    }
+
+    /**
      * Create axios instance with authentication
      * Useful for other services that need authenticated requests
      */
     createAuthenticatedClient() {
         return axios.create({
             baseURL: this.workerUrl,
-            headers: this.sessionCookie ? {
-                'Cookie': this.sessionCookie,
+            headers: this.sessionToken ? {
+                'Authorization': `Bearer ${this.sessionToken}`,
             } : {},
         });
     }

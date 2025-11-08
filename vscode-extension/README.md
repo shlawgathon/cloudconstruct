@@ -98,7 +98,7 @@ vscode-extension/
 
 The extension can be configured via VS Code settings:
 
-- `cloudconstruct.workerUrl`: Worker service URL (default: `http://localhost:3000`)
+- `cloudconstruct.workerUrl`: Worker service URL (default: `http://0.0.0.0:5353`)
 - `cloudconstruct.nextJsUrl`: Next.js dev server URL (default: `http://localhost:3001`)
 - `cloudconstruct.autoCheck`: Automatically check cluster status (default: `true`)
 

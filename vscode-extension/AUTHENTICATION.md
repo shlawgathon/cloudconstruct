@@ -271,7 +271,7 @@ To react to authentication changes, you can:
 
 ```json
 {
-  "cloudconstruct.workerUrl": "http://localhost:3000"
+  "cloudconstruct.workerUrl": "http://0.0.0.0:5353"
 }
 ```
 

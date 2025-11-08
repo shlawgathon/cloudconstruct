@@ -80,7 +80,7 @@
       "properties": {
         "cloudconstruct.workerUrl": {
           "type": "string",
-          "default": "http://localhost:3000",
+          "default": "http://0.0.0.0:5353",
           "description": "Worker service URL"
         },
         "cloudconstruct.autoCheck": {
@@ -145,6 +145,7 @@
     "lodash": "^4.17.21",
     "minimatch": "^10.1.1",
     "p-queue": "^9.0.0",
+    "shared-api-client": "file:../shared-api-client",
     "uuid": "^13.0.0",
     "ws": "^8.18.3",
     "yaml": "^2.8.1"

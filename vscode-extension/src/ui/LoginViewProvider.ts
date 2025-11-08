@@ -95,6 +95,9 @@ export class LoginViewProvider implements vscode.WebviewViewProvider {
                     vscode.window.showInformationMessage(`Welcome back, ${username}!`);
                     // Refresh the webview to show authenticated state
                     this.refreshView();
+                    
+                    // Notify extension to connect WebSocket
+                    vscode.commands.executeCommand('vscodeAiExcalidraw.connectWebSocket');
                 } else {
                     vscode.window.showErrorMessage(`Login failed: ${result.message}`);
                 }
@@ -168,6 +171,9 @@ export class LoginViewProvider implements vscode.WebviewViewProvider {
                     if (loginResult.success) {
                         vscode.window.showInformationMessage(`Welcome, ${username}!`);
                         this.refreshView();
+                        
+                        // Notify extension to connect WebSocket
+                        vscode.commands.executeCommand('vscodeAiExcalidraw.connectWebSocket');
                     }
                 } else {
                     vscode.window.showErrorMessage(`Sign up failed: ${result.message}`);

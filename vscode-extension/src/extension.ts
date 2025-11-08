@@ -3,7 +3,7 @@ import { LoginViewProvider } from './ui/LoginViewProvider';
 import { StatusView } from './cluster/StatusView';
 import { AuthManager } from './auth/AuthManager';
 import { WorkerApiClient } from './client/WorkerApiClient';
-import { WorkerWebSocket } from './websocket/WorkerWebSocket';
+import { VSCodeWorkerClient } from './client/VSCodeWorkerClientWrapper';
 import { FileSystemProvider } from './filesystem/FileSystemProvider';
 import { FileSystemCommands } from './filesystem/FileSystemCommands';
 import { ClusterCheckManager } from './cluster/ClusterCheckManager';
@@ -26,10 +26,16 @@ export function activate(context: vscode.ExtensionContext) {
         const config = vscode.workspace.getConfiguration('cloudconstruct');
 
         // Initialize core services
-        const workerUrl = config.get<string>('workerUrl', 'http://localhost:3000');
-        const authManager = new AuthManager(context, workerUrl);
-        const apiClient = new WorkerApiClient(workerUrl);
-        const webSocket = new WorkerWebSocket(workerUrl.replace('http', 'ws'));
+        const workerUrl = config.get<string>('workerUrl', 'http://0.0.0.0:5353');
+        
+        // Create WebSocket client (shared API client)
+        const webSocket = new VSCodeWorkerClient(workerUrl);
+        
+        // Create AuthManager with WebSocket client (so it can use the shared client's authenticate)
+        const authManager = new AuthManager(context, workerUrl, webSocket);
+        
+        // Create API client with WebSocket
+        const apiClient = new WorkerApiClient(workerUrl, webSocket);
 
         // Initialize UI components
         const loginViewProvider = new LoginViewProvider(extensionUri, context, authManager);
@@ -52,8 +58,8 @@ export function activate(context: vscode.ExtensionContext) {
             })
         );
 
-        // Register file system provider
-        const fileSystemProvider = new FileSystemProvider();
+        // Register file system provider with WebSocket client
+        const fileSystemProvider = new FileSystemProvider(webSocket);
         context.subscriptions.push(
             vscode.workspace.registerFileSystemProvider('cloudconstruct', fileSystemProvider, {
                 isCaseSensitive: false
@@ -112,6 +118,7 @@ export function activate(context: vscode.ExtensionContext) {
                 );
 
                 if (confirm === 'Logout') {
+                    webSocket.disconnect();
                     await authManager.logout();
                     vscode.window.showInformationMessage('Logged out successfully');
                     statusBarManager.updateStatus('disconnected');
@@ -119,13 +126,71 @@ export function activate(context: vscode.ExtensionContext) {
             })
         );
 
+        // Register command to connect WebSocket (called after login)
+        context.subscriptions.push(
+            vscode.commands.registerCommand('vscodeAiExcalidraw.connectWebSocket', async () => {
+                await connectWebSocket();
+            })
+        );
+
         // Initialize status bar
         statusBarManager.updateStatus('disconnected');
 
-        // Connect WebSocket if auto-check is enabled
+        // Set up WebSocket event handlers (once during initialization)
+        webSocket.onConnect(() => {
+            statusBarManager.updateStatus('connected');
+            outputChannel.appendLine('WebSocket connected');
+        });
+
+        webSocket.onDisconnect(() => {
+            statusBarManager.updateStatus('disconnected');
+            outputChannel.appendLine('WebSocket disconnected');
+        });
+
+        webSocket.onError((error) => {
+            outputChannel.appendLine(`WebSocket error: ${error.message}`);
+            // Only show error message if it's a critical error
+            if (!webSocket.getConnectionStatus()) {
+                vscode.window.showErrorMessage(`WebSocket error: ${error.message}`);
+            }
+        });
+
+        // Connect WebSocket after authentication
+        const connectWebSocket = async () => {
+            if (authManager.isAuthenticated()) {
+                const token = authManager.getSessionToken();
+                if (token) {
+                    try {
+                        await webSocket.connectWithToken(token);
+                    } catch (error) {
+                        outputChannel.appendLine(`Failed to connect WebSocket: ${error}`);
+                        statusBarManager.updateStatus('error');
+                    }
+                }
+            }
+        };
+
+        // Connect WebSocket if auto-check is enabled and user is authenticated
         if (config.get<boolean>('autoCheck', true)) {
-            webSocket.connect();
+            connectWebSocket();
         }
+
+        // Listen for authentication changes and connect/disconnect WebSocket
+        const authCheckInterval = setInterval(async () => {
+            if (authManager.isAuthenticated() && !webSocket.getConnectionStatus()) {
+                await connectWebSocket();
+            } else if (!authManager.isAuthenticated() && webSocket.getConnectionStatus()) {
+                webSocket.disconnect();
+                statusBarManager.updateStatus('disconnected');
+            }
+        }, 5000); // Check every 5 seconds
+
+        context.subscriptions.push({
+            dispose: () => {
+                clearInterval(authCheckInterval);
+                webSocket.disconnect();
+            }
+        });
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         outputChannel.appendLine(`[ERROR] Failed to activate extension: ${errorMessage}`);

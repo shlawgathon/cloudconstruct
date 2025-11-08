@@ -7,7 +7,6 @@
       "ES2020"
     ],
     "sourceMap": true,
-    "rootDir": "src",
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -22,8 +21,12 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true
   },
+  "include": [
+    "src/**/*"
+  ],
   "exclude": [
     "node_modules",
     ".vscode-test",
