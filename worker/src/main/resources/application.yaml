@@ -1,7 +1,7 @@
 ktor:
   application:
     modules:
-      - ApplicationKt.module
+      - gg.growly.cloudconstruct.worker.ApplicationKt.module
   deployment:
     port: 5353
 

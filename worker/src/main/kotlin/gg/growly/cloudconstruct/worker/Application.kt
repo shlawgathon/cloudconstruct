@@ -1,4 +1,5 @@
-
+package gg.growly.cloudconstruct.worker
+import configureWebSockets
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.netty.*
@@ -17,4 +18,5 @@ fun Application.module()
     configureSecurity()
     configureMonitoring()
     configureDatabases()
+    configureWebSockets()
 }

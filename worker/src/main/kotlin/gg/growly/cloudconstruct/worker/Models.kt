@@ -1,3 +1,5 @@
+package gg.growly.cloudconstruct.worker
+
 import com.mongodb.client.MongoCollection
 import com.mongodb.client.MongoDatabase
 import com.mongodb.client.model.Filters

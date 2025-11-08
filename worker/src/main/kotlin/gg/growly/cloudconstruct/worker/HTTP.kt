@@ -1,3 +1,5 @@
+package gg.growly.cloudconstruct.worker
+
 import com.asyncapi.kotlinasyncapi.context.service.AsyncApiExtension
 import com.asyncapi.kotlinasyncapi.ktor.AsyncApiPlugin
 import com.ucasoft.ktor.simpleCache.SimpleCache
@@ -5,6 +7,7 @@ import com.ucasoft.ktor.simpleMemoryCache.memoryCache
 import io.ktor.server.application.*
 import io.ktor.server.routing.*
 import io.ktor.server.response.*
+import io.ktor.server.websocket.WebSockets
 import kotlin.time.Duration.Companion.seconds
 
 fun Application.configureHTTP()
@@ -25,7 +28,7 @@ fun Application.configureHTTP()
     }
 
     // Enable server WebSockets for live video streaming bridge
-    install(io.ktor.server.websocket.WebSockets)
+    install(WebSockets)
 
     routing {
         // Health checks

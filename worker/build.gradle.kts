@@ -17,7 +17,7 @@ application {
 
 ktor {
     fatJar {
-        archiveFileName.set("shlawg.jar")
+        archiveFileName.set("cloudconstruct.jar")
     }
 }
 
@@ -41,6 +41,7 @@ dependencies {
 
     // AWS S3 for presigned URLs
     implementation("aws.sdk.kotlin:s3:1.0.0")
+    implementation("at.favre.lib:bcrypt:0.10.2")
 
     // Ktor HTTP Client for VoyageAI
     implementation("io.ktor:ktor-client-core")

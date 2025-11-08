@@ -1,3 +1,5 @@
+package gg.growly.cloudconstruct.worker
+
 import com.mongodb.client.MongoClients
 import com.mongodb.client.MongoDatabase
 import io.ktor.http.*
@@ -8,10 +10,16 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sessions.*
 import kotlinx.serialization.Serializable
+import io.ktor.util.AttributeKey
+
+private val MongoDbAttributeKey = AttributeKey<MongoDatabase>("gg.growly.cloudconstruct.worker.mongoDatabase")
 
 fun Application.configureDatabases()
 {
     val mongoDatabase = connectToMongoDB()
+    // Expose database via application attributes for reuse
+    attributes.put(MongoDbAttributeKey, mongoDatabase)
+
     val userService = UserService(mongoDatabase)
 
     @Serializable
@@ -53,7 +61,7 @@ fun Application.configureDatabases()
         }
 
         authenticate {
-            // ========== User Profile ==========
+            // ========== gg.growly.cloudconstruct.worker.User Profile ==========
             get("/user/me") {
                 val session = call.sessions.get(UserSession::class) as? UserSession
                 val userId = session?.userId ?: return@get call.respond(HttpStatusCode.Unauthorized)
@@ -63,6 +71,8 @@ fun Application.configureDatabases()
         }
     }
 }
+
+fun Application.mongoDatabase(): MongoDatabase = attributes[MongoDbAttributeKey]
 
 fun Application.connectToMongoDB(): MongoDatabase
 {
