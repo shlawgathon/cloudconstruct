@@ -5,6 +5,7 @@ import { TestPanel } from "./components/TestPanel";
 import { AccountModal } from "./components/AccountModal";
 import { LiveUpdateService } from "./services/LiveUpdateService";
 import type { ExcalidrawElement } from "./services/ElementFactory";
+import logoImage from "../logo.png";
 
 // Module-level API ref - this is the "link" that gets set when Excalidraw mounts
 const excalidrawAPIRef = { current: null as ExcalidrawAPI | null };
@@ -252,8 +253,19 @@ export function App() {
           boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
         }}
       >
-        <div style={{ fontSize: "16px", fontWeight: "500", color: "#1e1e1e" }}>
-          Excalidraw Live Updates Test
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <img
+            src={logoImage}
+            alt="CloudConstruct Logo"
+            style={{
+              width: "32px",
+              height: "32px",
+              objectFit: "contain",
+            }}
+          />
+          <span style={{ fontSize: "16px", fontWeight: "500", color: "#1e1e1e" }}>
+            Excalidraw Live Updates Test
+          </span>
         </div>
         <button
           onClick={() => setIsAccountModalOpen(true)}
