@@ -55,7 +55,7 @@ class MessageHandler(
             specFile = "generated-spec.yaml",
             status = "success"
         )
-        session.send(Frame.Text(globalJson.encodeToString(response)))
+        session.send(Frame.Text(globalJson.encodeToString(WSMessage.serializer(), response)))
         broadcastToVSC(response, token)
     }
 
@@ -67,7 +67,7 @@ class MessageHandler(
             k8sCode = k8sCode,
             errors = null
         )
-        session.send(Frame.Text(globalJson.encodeToString(response)))
+        session.send(Frame.Text(globalJson.encodeToString(WSMessage.serializer(), response)))
         broadcastToExcalidraw(
             WSMessage.StatusUpdate(
                 componentId = message.componentId,
