@@ -14,10 +14,20 @@ export interface AuthResponse {
 export type WSMessage =
     | AuthMessage
     | FileOperationMessage
+    | FileListRequestMessage
+    | FileListResponseMessage
+    | SpecPathSuggestionMessage
+    | FileWriteRequestMessage
     | WhiteboardUpdateMessage
+    | WhiteboardChangeDetectedMessage
     | StatusUpdateMessage
+    | StatusComponentUpdateMessage
     | CodeGenRequestMessage
     | CodeGenResponseMessage
+    | ClusterApplyRequestMessage
+    | ClusterApplyResponseMessage
+    | ClusterStatusPollRequestMessage
+    | ClusterStatusPollResponseMessage
     | ClusterCheckRequestMessage
     | ClusterCheckResponseMessage;
 
@@ -32,6 +42,34 @@ export interface FileOperationMessage {
     path?: string;
     content?: string;
     searchQuery?: string;
+}
+
+// Explicit file list request/response
+export interface FileListRequestMessage {
+    type: 'fileListRequest';
+    requestId?: string;
+}
+
+export interface FileListResponseMessage {
+    type: 'fileListResponse';
+    requestId?: string;
+    files: string[];
+}
+
+// Worker suggests a spec path for a component
+export interface SpecPathSuggestionMessage {
+    type: 'specPathSuggestion';
+    componentId: string;
+    suggestedPath: string;
+    reason?: string;
+}
+
+// Direct file write request
+export interface FileWriteRequestMessage {
+    type: 'fileWriteRequest';
+    path: string;
+    content: string;
+    overwrite?: boolean; // default true on the worker
 }
 
 export interface WhiteboardElement {
@@ -52,6 +90,13 @@ export interface WhiteboardUpdateMessage {
     screenshot?: string; // base64 encoded
 }
 
+export interface WhiteboardChangeDetectedMessage {
+    type: 'whiteboardChangeDetected';
+    componentId: string;
+    diffSummary: string;
+    changedElementIds: string[];
+}
+
 export enum ComponentStatus {
     LOADING = 'LOADING',
     SUCCESS = 'SUCCESS',
@@ -67,10 +112,48 @@ export interface StatusUpdateMessage {
     message?: string;
 }
 
+export interface StatusComponentUpdateMessage {
+    type: 'statusComponentUpdate';
+    componentId: string;
+    elementsJson: string;
+}
+
+export interface ClusterApplyRequestMessage {
+    type: 'clusterApplyRequest';
+    componentId: string;
+    specFile: string;
+    k8sCode?: string;
+}
+
+export interface ClusterApplyResponseMessage {
+    type: 'clusterApplyResponse';
+    componentId: string;
+    specFile: string;
+    success: boolean;
+    error?: string;
+}
+
+export interface ClusterStatusPollRequestMessage {
+    type: 'clusterStatusPollRequest';
+    componentId: string;
+    specFile: string;
+}
+
+export interface ClusterStatusPollResponseMessage {
+    type: 'clusterStatusPollResponse';
+    componentId: string;
+    specFile: string;
+    statusJson: string;
+    terminal?: boolean;
+    success?: boolean;
+    error?: string;
+}
+
 export interface CodeGenContext {
     whiteboard: WhiteboardElement[];
     files: string[];
     previousComponents?: string[];
+    screenshotBase64?: string;
 }
 
 export interface CodeGenRequestMessage {
@@ -393,12 +476,20 @@ export class VSCodeWorkerClient extends WorkerWSClient {
         super(workerUrl, 'vsc');
     }
 
-    // File operations
+    // File operations (legacy generic operation)
     async listFiles(path?: string): Promise<void> {
         this.send({
             type: 'fileOperation',
             operation: 'list',
             path
+        });
+    }
+
+    // Explicit file list request (new)
+    async requestFileList(requestId?: string): Promise<void> {
+        this.send({
+            type: 'fileListRequest',
+            requestId
         });
     }
 
@@ -450,6 +541,36 @@ export class VSCodeWorkerClient extends WorkerWSClient {
             type: 'clusterCheckRequest',
             componentId,
             specFile
+        });
+    }
+
+    // New: respond to worker's cluster apply request
+    sendClusterApplyResponse(componentId: string, specFile: string, success: boolean, error?: string): void {
+        this.send({
+            type: 'clusterApplyResponse',
+            componentId,
+            specFile,
+            success,
+            error
+        });
+    }
+
+    // New: poll cluster status periodically
+    pollClusterStatus(componentId: string, specFile: string): void {
+        this.send({
+            type: 'clusterStatusPollRequest',
+            componentId,
+            specFile
+        });
+    }
+
+    // New: direct write file helper (bypasses generic fileOperation)
+    writeFile(path: string, content: string, overwrite: boolean = true): void {
+        this.send({
+            type: 'fileWriteRequest',
+            path,
+            content,
+            overwrite
         });
     }
 

@@ -1,5 +1,6 @@
 package gg.growly.cloudconstruct.worker.websocket
 
+import gg.growly.cloudconstruct.worker.environment.Env
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -21,8 +22,8 @@ class GeminiService(
     private val config: ApplicationConfig,
     private val http: HttpClient = HttpClient(CIO) { install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) } }
 ) {
-    private val apiKey: String? = config.propertyOrNull("gemini.apiKey")?.getString()
-    private val modelName: String = config.propertyOrNull("gemini.model")?.getString() ?: "gemini-2.5-pro"
+    private val apiKey: String = Env.getRequired("GEMINI_API_KEY")
+    private val modelName: String = Env.getRequired("GEMINI_MODEL")
     private val endpoint: String = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
 
     suspend fun suggestSpecPath(context: CodeGenContext, yaml: String, existingFiles: List<String> = emptyList()): String {

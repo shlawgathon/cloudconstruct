@@ -1,152 +1,78 @@
 {
-  "name": "vscode-ai-excalidraw-extension",
-  "displayName": "CloudConstruct AI Excalidraw Extension",
-  "description": "AI-powered infrastructure prototyping with visual feedback",
+  "name": "cloudconstruct-vscode-v2",
+  "displayName": "CloudConstruct (v2)",
+  "description": "CloudConstruct VS Code extension (v2) integrating with the websocket worker and file search tools.",
   "version": "0.0.1",
+  "publisher": "cloudconstruct",
   "engines": {
-    "vscode": "^1.105.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Other"
   ],
   "activationEvents": [
+    "onCommand:cloudconstruct-v2.connect",
+    "onCommand:cloudconstruct-v2.disconnect",
+    "onCommand:cloudconstruct-v2.authenticate",
+    "onCommand:cloudconstruct-v2.searchFiles",
+    "onCommand:cloudconstruct-v2.openFileFromSearch",
+    "onCommand:cloudconstruct-v2.writeCurrentFile",
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "vscodeAiExcalidraw.login",
-        "title": "Login",
-        "category": "CloudConstruct"
+        "command": "cloudconstruct-v2.authenticate",
+        "title": "CloudConstruct: Authenticate"
       },
       {
-        "command": "vscodeAiExcalidraw.signup",
-        "title": "Sign Up",
-        "category": "CloudConstruct"
+        "command": "cloudconstruct-v2.connect",
+        "title": "CloudConstruct: Connect to Worker"
       },
       {
-        "command": "vscodeAiExcalidraw.openBrowser",
-        "title": "Open in Browser",
-        "category": "CloudConstruct"
+        "command": "cloudconstruct-v2.disconnect",
+        "title": "CloudConstruct: Disconnect from Worker"
       },
       {
-        "command": "vscodeAiExcalidraw.showStatus",
-        "title": "Show Status",
-        "category": "CloudConstruct"
+        "command": "cloudconstruct-v2.searchFiles",
+        "title": "CloudConstruct: Search Files (Worker Index)"
       },
       {
-        "command": "vscodeAiExcalidraw.checkCluster",
-        "title": "Check Cluster",
-        "category": "CloudConstruct"
+        "command": "cloudconstruct-v2.openFileFromSearch",
+        "title": "CloudConstruct: Open File From Search"
       },
       {
-        "command": "vscodeAiExcalidraw.logout",
-        "title": "Logout",
-        "category": "CloudConstruct"
-      }
-    ],
-    "views": {
-      "vscodeAiExcalidraw": [
-        {
-          "id": "vscodeAiExcalidraw.loginView",
-          "name": "Login",
-          "when": "true"
-        },
-        {
-          "id": "vscodeAiExcalidraw.clusterStatus",
-          "name": "Cluster Status",
-          "when": "true"
-        }
-      ]
-    },
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "vscodeAiExcalidraw",
-          "title": "CloudConstruct",
-          "icon": "$(server)"
-        }
-      ]
-    },
-    "viewsWelcome": [
-      {
-        "view": "vscodeAiExcalidraw.clusterStatus",
-        "contents": "No cluster status available.\n[Login](command:vscodeAiExcalidraw.login) to get started."
+        "command": "cloudconstruct-v2.writeCurrentFile",
+        "title": "CloudConstruct: Push Current File to Worker"
       }
     ],
     "configuration": {
-      "title": "CloudConstruct",
+      "title": "CloudConstruct (v2)",
       "properties": {
-        "cloudconstruct.workerUrl": {
+        "cloudconstructV2.workerUrl": {
           "type": "string",
-          "default": "http://localhost:3000",
-          "description": "Worker service URL"
-        },
-        "cloudconstruct.autoCheck": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically check cluster status"
-        },
-        "cloudconstruct.nextJsUrl": {
-          "type": "string",
-          "default": "http://localhost:3001",
-          "description": "Next.js dev server URL"
+          "default": "ws://localhost:5353",
+          "description": "WebSocket base URL of the CloudConstruct worker (ws://host:port)"
         }
       }
-    },
-    "menus": {
-      "view/title": [
-        {
-          "command": "vscodeAiExcalidraw.checkCluster",
-          "when": "view == vscodeAiExcalidraw.clusterStatus",
-          "group": "navigation"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "vscodeAiExcalidraw.showStatus",
-          "when": "view == vscodeAiExcalidraw.clusterStatus && viewItem == cluster",
-          "group": "inline"
-        }
-      ]
     }
   },
   "scripts": {
-    "vscode:prepublish": "bun run compile && cd ui-app && bun run build",
+    "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package",
-    "lint": "eslint src --ext ts",
-    "ui:dev": "cd ui-app && bun run dev",
-    "ui:build": "cd ui-app && bun run build"
+    "package": "vsce package"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "@types/glob": "^9.0.0",
-    "@types/node": "^24.10.0",
-    "@types/vscode": "^1.105.0",
-    "@types/ws": "^8.18.1",
-    "@typescript-eslint/eslint-plugin": "^8.46.3",
-    "@typescript-eslint/parser": "^8.46.3",
-    "@vscode/vsce": "^3.7.0",
-    "eslint": "^9.39.1",
-    "typescript": "^5.9.3"
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.5.12",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0",
+    "@vscode/vsce": "^3.7.0"
   },
   "dependencies": {
-    "@kubernetes/client-node": "^1.4.0",
-    "axios": "^1.13.2",
-    "chokidar": "^4.0.3",
-    "crypto-js": "^4.2.0",
-    "diff": "^8.0.2",
-    "eventemitter3": "^5.0.1",
-    "glob": "^11.0.3",
-    "jsonwebtoken": "^9.0.2",
-    "lodash": "^4.17.21",
-    "minimatch": "^10.1.1",
-    "p-queue": "^9.0.0",
-    "uuid": "^13.0.0",
-    "ws": "^8.18.3",
-    "yaml": "^2.8.1"
+    "shared-api-client": "file:../shared-api-client",
+    "ws": "^8.18.3"
   }
 }

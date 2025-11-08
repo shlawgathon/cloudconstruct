@@ -1,145 +1,110 @@
 import * as vscode from 'vscode';
-import { LoginViewProvider } from './ui/LoginViewProvider';
-import { StatusView } from './cluster/StatusView';
-import { AuthManager } from './auth/AuthManager';
-import { WorkerApiClient } from './client/WorkerApiClient';
-import { WorkerWebSocket } from './websocket/WorkerWebSocket';
-import { FileSystemProvider } from './filesystem/FileSystemProvider';
-import { FileSystemCommands } from './filesystem/FileSystemCommands';
-import { ClusterCheckManager } from './cluster/ClusterCheckManager';
-import { StatusBarManager } from './ui/StatusBarManager';
-import { WebviewProvider } from './ui/WebviewProvider';
-import { SpecFileWatcher } from './cluster/SpecFileWatcher';
+import { ClientManager } from './clientManager';
 
-// Create output channel for extension logs
-const outputChannel = vscode.window.createOutputChannel('CloudConstruct');
+let clientManager: ClientManager | null = null;
 
-/**
- * Extension activation and registration
- */
 export function activate(context: vscode.ExtensionContext) {
-    try {
-        outputChannel.appendLine('CloudConstruct AI Excalidraw Extension is now active!');
-        outputChannel.show(true); // Show output channel in the panel
+  clientManager = new ClientManager(context);
 
-        const extensionUri = context.extensionUri;
-        const config = vscode.workspace.getConfiguration('cloudconstruct');
+  const output = clientManager.getOutput();
+  output.appendLine('CloudConstruct (v2) extension activated');
 
-        // Initialize core services
-        const workerUrl = config.get<string>('workerUrl', 'http://localhost:3000');
-        const authManager = new AuthManager(context, workerUrl);
-        const apiClient = new WorkerApiClient(workerUrl);
-        const webSocket = new WorkerWebSocket(workerUrl.replace('http', 'ws'));
+  const authenticate = vscode.commands.registerCommand('cloudconstruct-v2.authenticate', async () => {
+    await clientManager!.authenticate();
+  });
 
-        // Initialize UI components
-        const loginViewProvider = new LoginViewProvider(extensionUri, context, authManager);
-        const statusView = new StatusView();
-        const statusBarManager = new StatusBarManager();
-        const webviewProvider = new WebviewProvider(extensionUri, context);
-
-        // Register webview providers
-        context.subscriptions.push(
-            vscode.window.registerWebviewViewProvider(
-                LoginViewProvider.viewType,
-                loginViewProvider
-            )
-        );
-
-        // Register tree data provider
-        context.subscriptions.push(
-            vscode.window.createTreeView('vscodeAiExcalidraw.clusterStatus', {
-                treeDataProvider: statusView
-            })
-        );
-
-        // Register file system provider
-        const fileSystemProvider = new FileSystemProvider();
-        context.subscriptions.push(
-            vscode.workspace.registerFileSystemProvider('cloudconstruct', fileSystemProvider, {
-                isCaseSensitive: false
-            })
-        );
-
-        // Initialize file system commands
-        const fileSystemCommands = new FileSystemCommands(fileSystemProvider);
-        fileSystemCommands.registerCommands(context);
-
-        // Initialize cluster check manager
-        const clusterCheckManager = new ClusterCheckManager(apiClient, webSocket, statusView);
-        clusterCheckManager.initialize(context);
-
-        // Initialize spec file watcher
-        const specFileWatcher = new SpecFileWatcher();
-        specFileWatcher.initialize(context);
-
-        // Register commands
-        context.subscriptions.push(
-            vscode.commands.registerCommand('vscodeAiExcalidraw.login', () => {
-                vscode.commands.executeCommand('vscodeAiExcalidraw.loginView.focus');
-            })
-        );
-
-        context.subscriptions.push(
-            vscode.commands.registerCommand('vscodeAiExcalidraw.signup', () => {
-                vscode.commands.executeCommand('vscodeAiExcalidraw.loginView.focus');
-            })
-        );
-
-        context.subscriptions.push(
-            vscode.commands.registerCommand('vscodeAiExcalidraw.openBrowser', () => {
-                vscode.env.openExternal(vscode.Uri.parse('https://cloudconstruct.io'));
-            })
-        );
-
-        context.subscriptions.push(
-            vscode.commands.registerCommand('vscodeAiExcalidraw.showStatus', async () => {
-                await webviewProvider.show();
-            })
-        );
-
-        context.subscriptions.push(
-            vscode.commands.registerCommand('vscodeAiExcalidraw.checkCluster', async () => {
-                await clusterCheckManager.checkCluster();
-            })
-        );
-
-        context.subscriptions.push(
-            vscode.commands.registerCommand('vscodeAiExcalidraw.logout', async () => {
-                const confirm = await vscode.window.showWarningMessage(
-                    'Are you sure you want to logout?',
-                    { modal: true },
-                    'Logout'
-                );
-
-                if (confirm === 'Logout') {
-                    await authManager.logout();
-                    vscode.window.showInformationMessage('Logged out successfully');
-                    statusBarManager.updateStatus('disconnected');
-                }
-            })
-        );
-
-        // Initialize status bar
-        statusBarManager.updateStatus('disconnected');
-
-        // Connect WebSocket if auto-check is enabled
-        if (config.get<boolean>('autoCheck', true)) {
-            webSocket.connect();
-        }
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        outputChannel.appendLine(`[ERROR] Failed to activate extension: ${errorMessage}`);
-        outputChannel.appendLine(`[ERROR] Stack: ${error instanceof Error ? error.stack : 'No stack trace'}`);
-        outputChannel.show(true);
-        console.error('CloudConstruct extension activation error:', error);
+  const connect = vscode.commands.registerCommand('cloudconstruct-v2.connect', async () => {
+    const ok = await clientManager!.connect();
+    if (ok) {
+      vscode.window.showInformationMessage('Connected to CloudConstruct worker.');
+      clientManager!.getOutput().show(true);
     }
+  });
+
+  const disconnect = vscode.commands.registerCommand('cloudconstruct-v2.disconnect', async () => {
+    await clientManager!.disconnect();
+    vscode.window.showInformationMessage('Disconnected from CloudConstruct worker.');
+  });
+
+  const searchFiles = vscode.commands.registerCommand('cloudconstruct-v2.searchFiles', async () => {
+    if (!clientManager!.isConnected()) {
+      const go = await vscode.window.showWarningMessage('Not connected. Connect now?', 'Connect');
+      if (go === 'Connect') {
+        const ok = await clientManager!.connect();
+        if (!ok) return;
+      } else {
+        return;
+      }
+    }
+
+    const query = await vscode.window.showInputBox({ prompt: 'Search query (space = AND)', placeHolder: 'e.g. k8s deployment yaml' });
+    if (!query) { return; }
+
+    try {
+      const results = await clientManager!.searchFilesLocally(query);
+      if (!results.length) {
+        vscode.window.showInformationMessage('No files matched your query.');
+        return;
+      }
+
+      const picked = await vscode.window.showQuickPick(results, { placeHolder: 'Select a file path from worker index' });
+      if (picked) {
+        // Store last picked in context for the openFileFromSearch command
+        context.workspaceState.update('cloudconstructV2.lastPickedPath', picked);
+        clientManager!.log(`Picked file: ${picked}`);
+        vscode.window.showInformationMessage(`Selected: ${picked}`);
+      }
+    } catch (e: any) {
+      vscode.window.showErrorMessage(`Search failed: ${e?.message ?? e}`);
+      clientManager!.log(`Search error: ${e?.stack ?? e}`);
+    }
+  });
+
+  const openFileFromSearch = vscode.commands.registerCommand('cloudconstruct-v2.openFileFromSearch', async () => {
+    const picked: string | undefined = await context.workspaceState.get('cloudconstructV2.lastPickedPath');
+    if (!picked) {
+      vscode.window.showWarningMessage('No previously selected path. Run "CloudConstruct: Search Files" first.');
+      return;
+    }
+    // We don’t yet have a read response type from worker. For now, we open a virtual doc
+    // with the selected path as read-only note, to be replaced once worker supports read responses.
+    const doc = await vscode.workspace.openTextDocument({ content: `Worker path: ${picked}\n\nReading file content requires worker read response support.`, language: 'markdown' });
+    await vscode.window.showTextDocument(doc, { preview: true });
+  });
+
+  const writeCurrentFile = vscode.commands.registerCommand('cloudconstruct-v2.writeCurrentFile', async () => {
+    if (!clientManager!.isConnected()) {
+      const go = await vscode.window.showWarningMessage('Not connected. Connect now?', 'Connect');
+      if (go === 'Connect') {
+        const ok = await clientManager!.connect();
+        if (!ok) return;
+      } else {
+        return;
+      }
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      vscode.window.showWarningMessage('No active editor.');
+      return;
+    }
+
+    const defaultPath = editor.document.uri.fsPath.split(/[\\/]/).slice(-1)[0];
+    const targetPath = await vscode.window.showInputBox({ prompt: 'Enter worker path to write to', value: defaultPath, ignoreFocusOut: true });
+    if (!targetPath) { return; }
+
+    try {
+      await clientManager!.writeFile(targetPath, editor.document.getText());
+      vscode.window.showInformationMessage(`Pushed current file to worker at ${targetPath}`);
+    } catch (e: any) {
+      vscode.window.showErrorMessage(`Write failed: ${e?.message ?? e}`);
+      clientManager!.log(`Write error: ${e?.stack ?? e}`);
+    }
+  });
+
+  context.subscriptions.push(authenticate, connect, disconnect, searchFiles, openFileFromSearch, writeCurrentFile);
 }
 
-/**
- * Extension deactivation
- */
 export function deactivate() {
-    outputChannel.appendLine('CloudConstruct AI Excalidraw Extension is now deactivated');
-    outputChannel.dispose();
+  clientManager?.disconnect();
 }
-
