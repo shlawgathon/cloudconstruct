@@ -7,6 +7,7 @@ import gg.growly.cloudconstruct.worker.websocket.GeminiService
 import gg.growly.cloudconstruct.worker.websocket.MessageHandler
 import gg.growly.cloudconstruct.worker.websocket.WSMessage
 import gg.growly.cloudconstruct.worker.websocket.WsRepository
+import gg.growly.cloudconstruct.worker.websocket.ChangeDeterminationService
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
@@ -20,8 +21,10 @@ fun Application.configureWebSockets() {
     val db = mongoDatabase()
     val connectionManager = ConnectionManager()
     val repo = WsRepository(db)
-    val gemini = GeminiService()
+    val gemini = GeminiService(environment.config)
     val handler = MessageHandler(connectionManager, repo, gemini)
+    val changeService = ChangeDeterminationService(repo, connectionManager, gemini)
+    changeService.start()
 
     routing {
         authenticate {

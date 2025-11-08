@@ -28,10 +28,24 @@ sealed class WSMessage {
     ) : WSMessage()
 
     @Serializable
+    data class FileWriteRequest(
+        val path: String,
+        val content: String,
+        val overwrite: Boolean = true
+    ) : WSMessage()
+
+    @Serializable
     data class WhiteboardUpdate(
         val componentId: String,
         val elements: List<WhiteboardElement>,
         val screenshot: String? = null // base64 encoded
+    ) : WSMessage()
+
+    @Serializable
+    data class WhiteboardChangeDetected(
+        val componentId: String,
+        val diffSummary: String,
+        val changedElementIds: List<String>
     ) : WSMessage()
 
     @Serializable
@@ -90,7 +104,8 @@ data class Point(val x: Double, val y: Double)
 data class CodeGenContext(
     val whiteboard: List<WhiteboardElement>,
     val files: List<String>,
-    val previousComponents: List<String>? = null
+    val previousComponents: List<String>? = null,
+    val screenshotBase64: String? = null
 )
 
 @Serializable
