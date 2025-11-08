@@ -26,6 +26,7 @@ export interface ExcalidrawAPI {
 interface ExcalidrawWrapperProps {
   onAPIReady?: (api: ExcalidrawAPI) => void;
   onChange?: (elements: ExcalidrawElement[], appState: any) => void;
+  onUpdateScene?: (elements: ExcalidrawElement[]) => void;
   initialData?: {
     elements?: ExcalidrawElement[];
   };
@@ -34,6 +35,7 @@ interface ExcalidrawWrapperProps {
 export function ExcalidrawWrapper({
   onAPIReady,
   onChange,
+  onUpdateScene,
   initialData,
 }: ExcalidrawWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -42,6 +44,15 @@ export function ExcalidrawWrapper({
   const [Excalidraw, setExcalidraw] = useState<any>(null);
   const apiReadyRef = useRef(false);
   const rootRef = useRef<any>(null);
+  const onChangeRef = useRef(onChange);
+  const onUpdateSceneRef = useRef(onUpdateScene);
+  const excalidrawAPIDirectRef = useRef<any>(null);
+  
+  // Keep onChange and onUpdateScene refs up to date
+  useEffect(() => {
+    onChangeRef.current = onChange;
+    onUpdateSceneRef.current = onUpdateScene;
+  }, [onChange, onUpdateScene]);
 
   useEffect(() => {
     // Excalidraw needs React 18, but we have React 19
@@ -211,11 +222,14 @@ export function ExcalidrawWrapper({
         });
       };
 
-      // Try different UMD build URLs
+      // Try different UMD build URLs - use latest version, with 0.18.0 as fallback
       const urls = [
-        { url: "https://unpkg.com/@excalidraw/excalidraw@latest/dist/excalidraw.production.min.js", name: "unpkg (production)" },
-        { url: "https://unpkg.com/@excalidraw/excalidraw@latest/dist/umd/excalidraw.production.min.js", name: "unpkg (UMD)" },
-        { url: "https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@latest/dist/excalidraw.production.min.js", name: "jsDelivr (production)" },
+        { url: "https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@latest/dist/excalidraw.production.min.js", name: "jsDelivr (latest)" },
+        { url: "https://unpkg.com/@excalidraw/excalidraw@latest/dist/excalidraw.production.min.js", name: "unpkg (latest)" },
+        { url: "https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.18.0/dist/excalidraw.production.min.js", name: "jsDelivr (0.18.0)" },
+        { url: "https://unpkg.com/@excalidraw/excalidraw@0.18.0/dist/excalidraw.production.min.js", name: "unpkg (0.18.0)" },
+        { url: "https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@latest/dist/umd/excalidraw.production.min.js", name: "jsDelivr (UMD latest)" },
+        { url: "https://unpkg.com/@excalidraw/excalidraw@latest/dist/umd/excalidraw.production.min.js", name: "unpkg (UMD latest)" },
       ];
 
       for (const { url, name } of urls) {
@@ -284,52 +298,317 @@ export function ExcalidrawWrapper({
     // Store root reference to prevent re-rendering
     rootRef.current = root;
 
-    // Render Excalidraw with the appropriate React
-    const excalidrawElement = ReactToUse.createElement(Excalidraw, {
-      ref: excalidrawRef,
-      initialData,
-      onChange: (elements: ExcalidrawElement[], appState: any) => {
-        onChange?.(elements, appState);
-      },
-      onReady: () => {
-        console.log("Excalidraw ready");
-      },
-    });
+    // Create API wrapper function
+    const createAPI = () => {
+      console.log("createAPI: Called");
+      console.log("createAPI: apiReadyRef.current:", apiReadyRef.current);
+      console.log("createAPI: excalidrawAPIDirectRef.current:", !!excalidrawAPIDirectRef.current);
+      console.log("createAPI: excalidrawRef.current:", !!excalidrawRef.current);
+      
+      // If we have the API directly from excalidrawAPI callback, use it
+      if (excalidrawAPIDirectRef.current) {
+        console.log("createAPI: Using API from excalidrawAPIDirectRef");
+        const directAPI = excalidrawAPIDirectRef.current;
+        
+        // Verify the API has the required methods
+        if (!directAPI.updateScene) {
+          console.error("createAPI: Direct API missing updateScene method. Available methods:", Object.keys(directAPI));
+          return;
+        }
+        
+        // Create a wrapper that uses the direct API
+        const api: ExcalidrawAPI = {
+          updateScene: (scene: { elements: ExcalidrawElement[]; appState?: any; commitToHistory?: boolean }) => {
+            if (!directAPI) {
+              console.error("updateScene: Direct API is null");
+              return;
+            }
+            try {
+              console.log("updateScene: Using direct API from excalidrawAPIDirectRef");
+              console.log("updateScene: Calling with scene:", scene);
+              
+              // Prepare sceneData according to Excalidraw API spec
+              const sceneData: any = {
+                elements: scene.elements,
+                commitToHistory: scene.commitToHistory !== undefined ? scene.commitToHistory : true,
+              };
+              
+              // Include appState if provided
+              if (scene.appState) {
+                sceneData.appState = scene.appState;
+              }
+              
+              console.log("updateScene: Calling directAPI.updateScene with:", sceneData);
+              directAPI.updateScene(sceneData);
+              console.log("updateScene: Successfully called updateScene");
+            } catch (error) {
+              console.error("Error updating scene:", error);
+              console.error("Error details:", error);
+            }
+          },
+          getSceneElements: () => {
+            if (!directAPI) {
+              console.error("getSceneElements: Direct API is null");
+              return [];
+            }
+            try {
+              if (directAPI.getSceneElements) {
+                return directAPI.getSceneElements() || [];
+              }
+              console.warn("getSceneElements: Direct API missing getSceneElements method");
+              return [];
+            } catch (error) {
+              console.error("Error getting scene elements:", error);
+              return [];
+            }
+          },
+          getAppState: () => {
+            if (!directAPI) {
+              console.error("getAppState: Direct API is null");
+              return {};
+            }
+            try {
+              if (directAPI.getAppState) {
+                return directAPI.getAppState() || {};
+              }
+              console.warn("getAppState: Direct API missing getAppState method");
+              return {};
+            } catch (error) {
+              console.error("Error getting app state:", error);
+              return {};
+            }
+          },
+          scrollToContent: (element: ExcalidrawElement) => {
+            if (!directAPI) {
+              console.error("scrollToContent: Direct API is null");
+              return;
+            }
+            try {
+              if (directAPI.scrollToContent) {
+                directAPI.scrollToContent(element, { fitToContent: true });
+              } else {
+                console.warn("scrollToContent: Direct API missing scrollToContent method");
+              }
+            } catch (error) {
+              console.error("Error scrolling to content:", error);
+            }
+          },
+        };
 
-    root.render(excalidrawElement);
+        apiReadyRef.current = true;
+        console.log("createAPI: API wrapper created from direct API, calling onAPIReady...");
+        console.log("createAPI: onAPIReady exists:", !!onAPIReady);
+        console.log("createAPI: API wrapper methods:", Object.keys(api));
+        onAPIReady?.(api);
+        console.log("createAPI: onAPIReady called, API wrapper created successfully");
+        return;
+      }
+      
+      if (apiReadyRef.current) {
+        console.log("createAPI: Already created, skipping");
+        return;
+      }
+      
+      if (!excalidrawRef.current) {
+        console.log("createAPI: excalidrawRef.current is null, cannot create API");
+        return;
+      }
+      
+      console.log("createAPI: Creating API wrapper from ref...");
 
-    // Create API wrapper after render - only call once
-    if (!apiReadyRef.current) {
       const api: ExcalidrawAPI = {
-        updateScene: (scene: { elements: ExcalidrawElement[] }) => {
-          if (excalidrawRef.current) {
-            excalidrawRef.current.updateScene(scene);
-          }
+        updateScene: (scene: { elements: ExcalidrawElement[]; appState?: any; commitToHistory?: boolean }) => {
+          try {
+            // Try multiple ways to get the API
+            // 1. Direct API from onReady callback (most reliable)
+            let excalidrawAPI = excalidrawAPIDirectRef.current;
+            
+            // 2. From ref's getExcalidrawAPI method
+            if (!excalidrawAPI && excalidrawRef.current?.getExcalidrawAPI) {
+              excalidrawAPI = excalidrawRef.current.getExcalidrawAPI();
+            }
+            
+            // 3. From ref's excalidrawAPI property
+            if (!excalidrawAPI && excalidrawRef.current?.excalidrawAPI) {
+              excalidrawAPI = excalidrawRef.current.excalidrawAPI;
+            }
+            
+            // 4. Use ref directly as fallback
+            if (!excalidrawAPI && excalidrawRef.current) {
+              excalidrawAPI = excalidrawRef.current;
+            }
+              
+              console.log("updateScene: Calling with scene:", scene);
+              console.log("updateScene: excalidrawAPIDirectRef.current:", !!excalidrawAPIDirectRef.current);
+              console.log("updateScene: excalidrawRef.current:", !!excalidrawRef.current);
+              console.log("updateScene: excalidrawAPI found:", !!excalidrawAPI);
+              console.log("updateScene: excalidrawAPI.updateScene:", !!excalidrawAPI?.updateScene);
+              console.log("updateScene: excalidrawAPI methods:", excalidrawAPI ? Object.keys(excalidrawAPI) : []);
+              
+              if (!excalidrawAPI) {
+                console.error("updateScene: No Excalidraw API found");
+                return;
+              }
+              
+              // Prepare sceneData according to Excalidraw API spec
+              const sceneData: any = {
+                elements: scene.elements,
+                commitToHistory: scene.commitToHistory !== undefined ? scene.commitToHistory : true,
+              };
+              
+              // Include appState if provided
+              if (scene.appState) {
+                sceneData.appState = scene.appState;
+              }
+              
+              if (excalidrawAPI.updateScene) {
+                console.log("updateScene: Calling excalidrawAPI.updateScene with:", sceneData);
+                excalidrawAPI.updateScene(sceneData);
+                console.log("updateScene: Successfully called updateScene");
+              } else if (excalidrawRef.current?.updateScene) {
+                console.log("updateScene: Calling excalidrawRef.current.updateScene with:", sceneData);
+                excalidrawRef.current.updateScene(sceneData);
+                console.log("updateScene: Successfully called updateScene on ref");
+              } else {
+                console.error("updateScene method not found. Available methods:", Object.keys(excalidrawRef.current || {}));
+                console.error("updateScene: excalidrawAPI methods:", excalidrawAPI ? Object.keys(excalidrawAPI) : []);
+              }
+            } catch (error) {
+              console.error("Error updating scene:", error);
+              console.error("Error details:", error);
+            }
         },
         getSceneElements: () => {
           if (excalidrawRef.current) {
-            return excalidrawRef.current.getSceneElements() || [];
+            try {
+              const excalidrawAPI = excalidrawRef.current.getExcalidrawAPI?.() || excalidrawRef.current;
+              if (excalidrawAPI.getSceneElements) {
+                return excalidrawAPI.getSceneElements() || [];
+              } else if (excalidrawRef.current.getSceneElements) {
+                return excalidrawRef.current.getSceneElements() || [];
+              }
+              return [];
+            } catch (error) {
+              console.error("Error getting scene elements:", error);
+              return [];
+            }
           }
           return [];
         },
         getAppState: () => {
           if (excalidrawRef.current) {
-            return excalidrawRef.current.getAppState() || {};
+            try {
+              const excalidrawAPI = excalidrawRef.current.getExcalidrawAPI?.() || excalidrawRef.current;
+              
+              console.log("=== getAppState Debug ===");
+              console.log("excalidrawRef.current:", excalidrawRef.current);
+              console.log("excalidrawAPI:", excalidrawAPI);
+              console.log("excalidrawAPI methods:", excalidrawAPI ? Object.keys(excalidrawAPI) : []);
+              
+              let appState = null;
+              
+              if (excalidrawAPI.getAppState) {
+                appState = excalidrawAPI.getAppState();
+                console.log("Got appState from excalidrawAPI.getAppState():", appState);
+              } else if (excalidrawRef.current.getAppState) {
+                appState = excalidrawRef.current.getAppState();
+                console.log("Got appState from excalidrawRef.current.getAppState():", appState);
+              }
+              
+              if (appState) {
+                console.log("AppState keys:", Object.keys(appState));
+                console.log("selectedElementIds:", appState.selectedElementIds);
+                console.log("selectedElementIds type:", typeof appState.selectedElementIds);
+                console.log("selectedElementIds isArray:", Array.isArray(appState.selectedElementIds));
+                if (appState.selectedElementIds && typeof appState.selectedElementIds === 'object') {
+                  console.log("selectedElementIds keys:", Object.keys(appState.selectedElementIds));
+                }
+                return appState;
+              }
+              
+              // Try to get app state from the component directly
+              if (excalidrawRef.current.props?.appState) {
+                console.log("getAppState from props:", excalidrawRef.current.props.appState);
+                return excalidrawRef.current.props.appState;
+              }
+              
+              console.log("No appState found, returning empty object");
+              return {};
+            } catch (error) {
+              console.error("Error getting app state:", error);
+              return {};
+            }
           }
           return {};
         },
         scrollToContent: (element: ExcalidrawElement) => {
           if (excalidrawRef.current) {
-            excalidrawRef.current.scrollToContent(element, {
-              fitToContent: true,
-            });
+            try {
+              const excalidrawAPI = excalidrawRef.current.getExcalidrawAPI?.() || excalidrawRef.current;
+              if (excalidrawAPI.scrollToContent) {
+                excalidrawAPI.scrollToContent(element, { fitToContent: true });
+              } else if (excalidrawRef.current.scrollToContent) {
+                excalidrawRef.current.scrollToContent(element, { fitToContent: true });
+              }
+            } catch (error) {
+              console.error("Error scrolling to content:", error);
+            }
           }
         },
       };
 
       apiReadyRef.current = true;
+      console.log("createAPI: API wrapper created, calling onAPIReady...");
+      console.log("createAPI: onAPIReady exists:", !!onAPIReady);
       onAPIReady?.(api);
-    }
+      console.log("createAPI: onAPIReady called, API wrapper created successfully");
+    };
+
+    // Render Excalidraw with the appropriate React
+    // Use excalidrawAPI prop callback (official API) instead of onReady
+    const excalidrawElement = ReactToUse.createElement(Excalidraw, {
+      ref: excalidrawRef,
+      initialData,
+      onChange: (elements: ExcalidrawElement[], appState: any) => {
+        // Use ref to avoid re-renders
+        if (onChangeRef.current) {
+          onChangeRef.current(elements, appState);
+        }
+      },
+      excalidrawAPI: (api: any) => {
+        console.log("=== Excalidraw excalidrawAPI callback called ===");
+        console.log("excalidrawAPI: api received:", api);
+        console.log("excalidrawAPI: api type:", typeof api);
+        console.log("excalidrawAPI: api methods:", api ? Object.keys(api) : []);
+        
+        if (!api) {
+          console.error("excalidrawAPI: API is null or undefined!");
+          return;
+        }
+        
+        // Store the API directly
+        excalidrawAPIDirectRef.current = api;
+        console.log("excalidrawAPI: Stored API in excalidrawAPIDirectRef.current");
+        
+        // Store the API directly on the ref if available
+        if (excalidrawRef.current) {
+          console.log("excalidrawAPI: Storing API on excalidrawRef.current");
+          excalidrawRef.current.excalidrawAPI = api;
+        }
+        
+        // Create API wrapper immediately when API is available
+        console.log("excalidrawAPI: Calling createAPI immediately...");
+        createAPI();
+      },
+    });
+
+    root.render(excalidrawElement);
+
+    // Also try to create API after a delay as fallback
+    setTimeout(() => {
+      console.log("Fallback setTimeout: Calling createAPI after 1 second...");
+      createAPI();
+    }, 1000);
 
     return () => {
       if (rootRef.current) {

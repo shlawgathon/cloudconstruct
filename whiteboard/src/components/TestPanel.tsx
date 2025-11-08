@@ -9,33 +9,23 @@ interface TestPanelProps {
 }
 
 export function TestPanel({ updateService }: TestPanelProps) {
-  const handleAddRectangle = () => {
-    updateService.addElement("rectangle");
-  };
-
-  const handleAddText = () => {
-    updateService.addElement("text", undefined, { text: "Hello World" });
-  };
-
-  const handleChangeColor = () => {
-    const selected = updateService.getSelectedElements();
-    if (selected.length > 0) {
-      const colors = ["#ef4444", "#3b82f6", "#22c55e", "#f97316", "#8b5cf6"];
-      const randomColor = colors[Math.floor(Math.random() * colors.length)];
-      updateService.changeElementColor(selected[0].id, randomColor);
-    } else {
-      alert("Please select an element first");
-    }
-  };
-
   const handleSetStatus = (status: Status) => {
+    console.log("=== handleSetStatus called ===");
+    console.log("Status:", status);
+    
     const selected = updateService.getSelectedElements();
+    console.log("Selected elements:", selected);
+    console.log("Selected count:", selected.length);
+    
     if (selected.length > 0) {
+      console.log("Setting status to:", status, "for", selected.length, "element(s)");
       selected.forEach((el) => {
+        console.log("Updating element:", el.id, el.type);
         updateService.setElementStatus(el.id, status);
       });
     } else {
-      alert("Please select an element first");
+      console.warn("No elements selected when button clicked");
+      alert("Please select an element first. Make sure an element is selected in Excalidraw.");
     }
   };
 
@@ -91,48 +81,12 @@ export function TestPanel({ updateService }: TestPanelProps) {
       }}
     >
       <h3 style={{ margin: "0 0 12px 0", fontSize: "16px", fontWeight: "600" }}>
-        Test Controls
+        Status Controls
       </h3>
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        <button
-          onClick={handleAddRectangle}
-          style={{
-            padding: "8px 12px",
-            border: "1px solid #ccc",
-            borderRadius: "4px",
-            background: "white",
-            cursor: "pointer",
-            fontSize: "14px",
-          }}
-        >
-          Add Rectangle
-        </button>
-        <button
-          onClick={handleAddText}
-          style={{
-            padding: "8px 12px",
-            border: "1px solid #ccc",
-            borderRadius: "4px",
-            background: "white",
-            cursor: "pointer",
-            fontSize: "14px",
-          }}
-        >
-          Add Text
-        </button>
-        <button
-          onClick={handleChangeColor}
-          style={{
-            padding: "8px 12px",
-            border: "1px solid #ccc",
-            borderRadius: "4px",
-            background: "white",
-            cursor: "pointer",
-            fontSize: "14px",
-          }}
-        >
-          Change Color
-        </button>
+        <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>
+          Select an element in Excalidraw, then click a status button:
+        </div>
         <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #e0e0e0" }}>
           <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px" }}>
             Status:
