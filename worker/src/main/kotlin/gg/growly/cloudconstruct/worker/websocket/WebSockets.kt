@@ -104,8 +104,8 @@ fun Application.configureWebSockets() {
             call.respond(
                 mapOf(
                     "status" to "healthy",
-                    "vscConnections" to connectionManager.getAllVSCSessions().size,
-                    "excalidrawConnections" to connectionManager.getAllExcalidrawSessions().size
+                    "vscConnections" to connectionManager.getAllVSCSessions().size.toString(),
+                    "excalidrawConnections" to connectionManager.getAllExcalidrawSessions().size.toString()
                 )
             )
         }
