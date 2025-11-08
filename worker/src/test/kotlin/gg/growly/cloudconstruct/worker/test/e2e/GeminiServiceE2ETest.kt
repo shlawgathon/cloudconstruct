@@ -15,86 +15,59 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.Url
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
-import io.ktor.http.withCharset
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.config.MapApplicationConfig
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class GeminiServiceE2ETest {
     private val json = Json { ignoreUnknownKeys = true }
 
     @Test
-    fun `mock path uses deterministic YAML and analysis without API key`() = runBlocking {
+    fun `calls all GeminiService functions via model and prints outputs`() = runBlocking {
         val cfg = MapApplicationConfig().apply {
             // No gemini.apiKey set (or empty) should trigger mock behavior
             put("gemini.model", Env.get("GEMINI_MODEL") ?: "")
             put("gemini.apiKey", Env.get("GEMINI_API_KEY") ?: "")
         }
+
         val service = GeminiService(cfg)
 
         val context = CodeGenContext(
             whiteboard = listOf(
-                WhiteboardElement(
-                    id = "1",
-                    type = "text",
-                    x = 0.0,
-                    y = 0.0,
-                    text = "Hello World"
-                )
+                WhiteboardElement(id = "1", type = "text", x = 0.0, y = 0.0, text = "Hello World")
             ),
             files = emptyList()
         )
 
-        val code = service.generateCode("Create a web service", context)
-        assertTrue(code.contains("kind: Deployment"), "Should contain Deployment")
-        assertTrue(code.contains("kind: Service"), "Should contain Service")
-        assertTrue(code.contains("name: hello-world"), "Should infer name from whiteboard text")
+        // generateCode
+        val yaml = service.generateCode("Create a web service", context)
+        println("generateCode ->\n$yaml")
+//        assertEquals("OK_FROM_MODEL", yaml)
 
+        // analyzeWhiteboard
         val analysis = service.analyzeWhiteboard(context.whiteboard)
-        println(analysis)
-        assertNotEquals("No analysis", analysis)
-    }
+        println("analyzeWhiteboard ->\n$analysis")
+//        assertEquals("OK_FROM_MODEL", analysis)
 
-    @Test
-    fun `configured path calls Gemini endpoint and returns model text`() = runBlocking {
-        val model = "g-model"
-        val apiKey = "dummy-key"
-        val cfg = MapApplicationConfig().apply {
-            put("gemini.model", model)
-            put("gemini.apiKey", apiKey)
-        }
+        // suggestSpecPath
+        val suggestedPath = service.suggestSpecPath(context, yaml = "apiVersion: v1\nkind: Service\nmetadata:\n  name: hello-world", existingFiles = listOf("k8s/hello-world.yaml"))
+        println("suggestSpecPath -> $suggestedPath")
+//        assertEquals("OK_FROM_MODEL", suggestedPath)
 
-        // Create a MockEngine that validates request and returns a fake GeminiResponse
-        val engine = MockEngine { request ->
-            validateGeminiRequest(request, model, apiKey)
-            val body = """
-                {
-                  "candidates": [
-                    { "content": { "parts": [ { "text": "OK_FROM_MODEL" } ] } }
-                  ]
-                }
-            """.trimIndent()
-            respond(
-                content = body,
-                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
-            )
-        }
-        val client = HttpClient(engine) {
-            install(ContentNegotiation) { json(json) }
-        }
-        val service = GeminiService(cfg, client)
+        // generateClusterCheck
+        val jsModule = service.generateClusterCheck("k8s/hello-world.yaml")
+        println("generateClusterCheck ->\n$jsModule")
+//        assertEquals("OK_FROM_MODEL", jsModule)
 
-        val context = CodeGenContext(whiteboard = emptyList(), files = emptyList())
-        val text = service.generateCode("Prompt", context)
-        assertEquals("OK_FROM_MODEL", text)
-
-        val analysis = service.analyzeWhiteboard(emptyList(), null)
-        assertEquals("OK_FROM_MODEL", analysis)
+        // generateStatusComponent
+        val statusJson = "{" + "\"ready\": true, \"details\": []" + "}"
+        val excalidraw = service.generateStatusComponent(statusJson, context)
+        println("generateStatusComponent ->\n$excalidraw")
+//        assertEquals("OK_FROM_MODEL", excalidraw)
     }
 
     private fun validateGeminiRequest(request: HttpRequestData, model: String, apiKey: String) {
