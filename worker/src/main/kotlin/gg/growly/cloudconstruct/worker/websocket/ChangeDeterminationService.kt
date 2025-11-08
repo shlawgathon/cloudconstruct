@@ -24,10 +24,14 @@ class ChangeDeterminationService(
 
     fun start() {
         if (job != null) return
+        println("[CDS] Starting ChangeDeterminationService")
         job = scope.launch {
             while (isActive) {
+                val t0 = System.currentTimeMillis()
                 runCatching { pollOnce() }
-                    .onFailure { println("ChangeDeterminationService error: ${it.message}") }
+                    .onFailure { it.printStackTrace(); println("[CDS][ERR] ${it.message}") }
+                val dt = System.currentTimeMillis() - t0
+                if (dt > 500) println("[CDS] Poll took ${dt}ms")
                 delay(1000)
             }
         }
@@ -86,7 +90,7 @@ class ChangeDeterminationService(
                 )
                 // Ask VSC to write/update a file
                 broadcastToVSC(
-                    WSMessage.FileWriteRequest(path = path, content = yaml, overwrite = true)
+                    WSMessage.FileWriteRequest(path = path, content = yaml, overwrite = true, componentId = componentId)
                 )
 
                 // Broadcast SUCCESS status

@@ -2,6 +2,7 @@
  * Account modal for login/signup
  */
 import { useState } from "react";
+import { WorkerClient } from "../services/WorkerClient";
 
 interface AccountModalProps {
   isOpen: boolean;
@@ -12,15 +13,29 @@ export function AccountModal({ isOpen, onClose }: AccountModalProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log(`${isLogin ? "Login" : "Signup"}:`, { username, password });
-    // Here you would typically call an auth service
-    alert(`${isLogin ? "Login" : "Signup"} with username: ${username}`);
-    onClose();
+    setError(null);
+    setLoading(true);
+    try {
+      if (isLogin) {
+        await WorkerClient.login(username, password);
+      } else {
+        await WorkerClient.register(username, password);
+      }
+      await WorkerClient.connect();
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || "Authentication failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

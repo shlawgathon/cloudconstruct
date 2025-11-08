@@ -30,7 +30,7 @@ class GeminiService(
         require(!apiKey.isNullOrBlank()) { "gemini.apiKey is required for suggestSpecPath()" }
         // Ask Gemini to propose a sane, idempotent file path under k8s/, preferring reuse of existing similar files
         val parts = mutableListOf<JsonObject>()
-        parts += JsonObject(mapOf("text" to JsonPrimitive("You propose a single Kubernetes spec path under the 'k8s/' directory for the component described. Respond with just the relative path string. Prefer reusing an existing file if it likely matches the component; otherwise propose a new concise, kebab-case name.")))
+        parts += JsonObject(mapOf("text" to JsonPrimitive("You propose a single Kubernetes spec path under the 'k8s/' directory for the component described. Respond with just the relative path string. Prefer reusing an existing file if it likely matches the component; otherwise propose a new concise, kebab-case name. No commas, you can have multiple subdirectories. Use a fluxcd or argocd convention if possible.")))
         parts += JsonObject(mapOf("text" to JsonPrimitive("Context whiteboard elements (JSON):")))
         parts += JsonObject(mapOf("text" to JsonPrimitive(Json.encodeToString(context.whiteboard))))
         parts += JsonObject(mapOf("text" to JsonPrimitive("Existing files (newline separated):\n" + existingFiles.joinToString("\n"))))

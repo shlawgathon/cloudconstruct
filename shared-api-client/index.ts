@@ -13,11 +13,13 @@ export interface AuthResponse {
 // WebSocket Message Types
 export type WSMessage =
     | AuthMessage
+    | ConnectedClientsUpdateMessage
     | FileOperationMessage
     | FileListRequestMessage
     | FileListResponseMessage
     | SpecPathSuggestionMessage
     | FileWriteRequestMessage
+    | FileWriteResponseMessage
     | WhiteboardUpdateMessage
     | WhiteboardChangeDetectedMessage
     | StatusUpdateMessage
@@ -34,6 +36,13 @@ export type WSMessage =
 export interface AuthMessage {
     type: 'auth';
     token: string;
+}
+
+export interface ConnectedClientsUpdateMessage {
+    type: 'connectedClientsUpdate';
+    userId: string;
+    vsc: number;
+    excalidraw: number;
 }
 
 export interface FileOperationMessage {
@@ -70,6 +79,15 @@ export interface FileWriteRequestMessage {
     path: string;
     content: string;
     overwrite?: boolean; // default true on the worker
+    componentId?: string; // optional origin component
+}
+
+export interface FileWriteResponseMessage {
+    type: 'fileWriteResponse';
+    path: string;
+    success: boolean;
+    error?: string;
+    componentId?: string;
 }
 
 export interface WhiteboardElement {
@@ -193,6 +211,24 @@ export type ErrorHandler = (error: Error) => void;
 /**
  * Base WebSocket Client for communicating with the Kotlin worker
  */
+export interface WorkerLogger {
+    debug: (...args: any[]) => void;
+    info: (...args: any[]) => void;
+    warn: (...args: any[]) => void;
+    error: (...args: any[]) => void;
+}
+
+class DefaultLogger implements WorkerLogger {
+    private prefix(scope: string, level: string) {
+        const ts = new Date().toISOString();
+        return `[${ts}] [${scope}] [${level}]`;
+    }
+    debug = (...args: any[]) => console.debug(this.prefix('WSClient','DEBUG'), ...args);
+    info = (...args: any[]) => console.info(this.prefix('WSClient','INFO'), ...args);
+    warn = (...args: any[]) => console.warn(this.prefix('WSClient','WARN'), ...args);
+    error = (...args: any[]) => console.error(this.prefix('WSClient','ERROR'), ...args);
+}
+
 export class WorkerWSClient {
     // Cross-runtime helpers
     private getWebSocketConstructor = async (): Promise<any> => {
@@ -227,14 +263,87 @@ export class WorkerWSClient {
     private connectionHandlers: Set<ConnectionHandler> = new Set();
     private disconnectionHandlers: Set<ConnectionHandler> = new Set();
     private errorHandlers: Set<ErrorHandler> = new Set();
+    private connectedClientsHandlers: Set<(msg: ConnectedClientsUpdateMessage) => void> = new Set();
     private messageQueue: WSMessage[] = [];
     private isConnected = false;
     private clientType: 'vsc' | 'excalidraw';
     private workerUrl: string;
+    private logger: WorkerLogger = new DefaultLogger();
 
     constructor(workerUrl: string, clientType: 'vsc' | 'excalidraw') {
         this.workerUrl = workerUrl;
         this.clientType = clientType;
+    }
+
+    setLogger(logger: WorkerLogger) {
+        this.logger = logger || this.logger;
+    }
+
+    onConnectedClientsUpdate(handler: (msg: ConnectedClientsUpdateMessage) => void) {
+        this.connectedClientsHandlers.add(handler);
+    }
+
+    offConnectedClientsUpdate(handler: (msg: ConnectedClientsUpdateMessage) => void) {
+        this.connectedClientsHandlers.delete(handler);
+    }
+
+    // New cookie-based auth endpoints
+    async register(username: string, password: string): Promise<{ userId: string }> {
+        const httpBase = this.workerUrl.replace('ws://', 'http://').replace('wss://', 'https://');
+        const res = await fetch(`${httpBase}/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ username, password })
+        });
+        if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            this.logger.error('Register failed', res.status, body);
+            throw new Error(`Register failed: ${res.status}`);
+        }
+        const data = await res.json();
+        this.logger.info('Registered user', data);
+        return data;
+    }
+
+    async login(username: string, password: string): Promise<{ userId: string }> {
+        const httpBase = this.workerUrl.replace('ws://', 'http://').replace('wss://', 'https://');
+        const res = await fetch(`${httpBase}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ username, password })
+        });
+        if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            this.logger.error('Login failed', res.status, body);
+            throw new Error(`Login failed: ${res.status}`);
+        }
+        const data = await res.json();
+        this.logger.info('Logged in', data);
+        return data;
+    }
+
+    async getWsToken(type: 'vsc' | 'excalidraw' = this.clientType): Promise<string> {
+        const httpBase = this.workerUrl.replace('ws://', 'http://').replace('wss://', 'https://');
+        const res = await fetch(`${httpBase}/ws/token?type=${type.toUpperCase()}`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+        if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            this.logger.error('WS token fetch failed', res.status, body);
+            throw new Error(`WS token failed: ${res.status}`);
+        }
+        const data: AuthResponse = await res.json();
+        this.logger.info('Received WS token');
+        this.sessionToken = data.sessionToken;
+        return data.sessionToken;
+    }
+
+    async connectAs(type: 'vsc' | 'excalidraw' = this.clientType): Promise<void> {
+        await this.getWsToken(type);
+        await this.connect();
     }
 
     /**
@@ -286,7 +395,7 @@ export class WorkerWSClient {
                 this.ws = new WS(url);
 
                 const handleOpen = () => {
-                    console.log(`Connected to worker as ${this.clientType}`);
+                    this.logger.info(`Connected to worker as ${this.clientType}`);
                     this.isConnected = true;
                     this.reconnectAttempts = 0;
                     this.reconnectDelay = 1000;
@@ -317,7 +426,7 @@ export class WorkerWSClient {
                         const message = JSON.parse(raw) as WSMessage;
                         this.handleMessage(message);
                     } catch (error) {
-                        console.error('Failed to parse message:', error);
+                        this.logger.error('Failed to parse message', error);
                         this.errorHandlers.forEach(handler => handler(error as Error));
                     }
                 };
@@ -325,11 +434,12 @@ export class WorkerWSClient {
                 const handleError = (error: any) => {
                     console.error('WebSocket error:', error);
                     this.errorHandlers.forEach(handler => handler(new Error('WebSocket error')));
+                    this.logger.error('WebSocket connection failed', error);
                     reject(new Error('WebSocket connection failed'));
                 };
 
                 const handleClose = () => {
-                    console.log('WebSocket connection closed');
+                    this.logger.warn('WebSocket connection closed');
                     this.isConnected = false;
                     this.disconnectionHandlers.forEach(handler => handler());
 
@@ -368,7 +478,7 @@ export class WorkerWSClient {
      */
     private async reconnect(): Promise<void> {
         this.reconnectAttempts++;
-        console.log(`Reconnecting... Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+        this.logger.warn(`Reconnecting... Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
 
         await new Promise(resolve => setTimeout(resolve, this.reconnectDelay));
         this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000); // Max 30 seconds
@@ -376,7 +486,7 @@ export class WorkerWSClient {
         try {
             await this.connect();
         } catch (error) {
-            console.error('Reconnection failed:', error);
+            this.logger.error('Reconnection failed', error as any);
         }
     }
 
@@ -385,6 +495,7 @@ export class WorkerWSClient {
      */
     send(message: WSMessage): void {
         if (!this.isConnected) {
+            this.logger.warn('WS not connected; queueing message', message);
             this.messageQueue.push(message as WSMessage);
             return;
         }
@@ -392,12 +503,15 @@ export class WorkerWSClient {
         const OPEN_STATE = 1; // WebSocket.OPEN in both browser and 'ws'
         if (this.ws && this.ws.readyState === OPEN_STATE) {
             try {
+                this.logger.debug('Sending message', message);
                 this.ws.send(JSON.stringify(message));
             } catch (err) {
+                this.logger.error('Send failed; re-queueing', err);
                 // If send fails, re-queue to attempt after reconnect
                 this.messageQueue.push(message as WSMessage);
             }
         } else {
+            this.logger.warn('Socket not OPEN; queueing message', message);
             this.messageQueue.push(message as WSMessage);
         }
     }
@@ -406,7 +520,19 @@ export class WorkerWSClient {
      * Handle incoming messages
      */
     private handleMessage(message: WSMessage): void {
-        this.messageHandlers.forEach(handler => handler(message));
+        try {
+            const t = ((message as any).type || '').toString();
+            if (t && t.toLowerCase() === 'connectedclientsupdate') {
+                const msg = message as unknown as ConnectedClientsUpdateMessage;
+                this.logger.debug('Received connectedClientsUpdate', msg);
+                this.connectedClientsHandlers.forEach(h => h(msg));
+                return;
+            }
+            this.logger.debug('Received message', message);
+            this.messageHandlers.forEach(handler => handler(message));
+        } catch (e) {
+            this.logger.error('handleMessage error', e);
+        }
     }
 
     /**

@@ -3,9 +3,10 @@ import "./index.css";
 import { ExcalidrawWrapper, type ExcalidrawAPI } from "./components/ExcalidrawWrapper";
 import { TestPanel } from "./components/TestPanel";
 import { AccountModal } from "./components/AccountModal";
+import { StatusBar } from "./components/StatusBar";
+import { WorkerClient } from "./services/WorkerClient";
 import { LiveUpdateService } from "./services/LiveUpdateService";
 import type { ExcalidrawElement } from "./services/ElementFactory";
-import logoImage from "../logo.png";
 
 // Module-level API ref - this is the "link" that gets set when Excalidraw mounts
 const excalidrawAPIRef = { current: null as ExcalidrawAPI | null };
@@ -22,6 +23,7 @@ export function App() {
   const updateServiceRef = useRef(new LiveUpdateService());
   const updateService = updateServiceRef.current;
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const COMPONENT_ID = 'whiteboard-1';
   const previousElementsRef = useRef<ExcalidrawElement[]>([]);
   const currentElementsRef = useRef<ExcalidrawElement[]>([]);
   const periodicCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -66,21 +68,21 @@ export function App() {
   // Callback that gets called when Excalidraw API is ready
   const onAPIReady = useCallback((api: ExcalidrawAPI) => {
     console.log("onAPIReady called with API:", api);
-    
+
     // Store API in module-level ref - this is the "link"
     excalidrawAPIRef.current = api;
     console.log("API stored in excalidrawAPIRef.current");
-    
+
     // Also store in state for component-level access
     setExcalidrawAPI(api);
-    
+
     // Set API on the service
     updateService.setAPI(api);
     updateService.setAppStateGetter(() => currentAppStateRef.current);
     updateService.setElementsGetter(() => currentElementsRef.current);
     // Set API getter to use the module-level ref
     updateService.setAPIGetter(() => getExcalidrawApi());
-    
+
     console.log("API set on updateService and module ref");
   }, [updateService]);
 
@@ -105,12 +107,12 @@ export function App() {
     // Store current app state and elements for getting selected elements
     currentAppStateRef.current = appState;
     currentElementsRef.current = elements;
-    
+
     // Debug: Log selection changes
     if (appState?.selectedElementIds) {
-      const selectedCount = Array.isArray(appState.selectedElementIds) 
-        ? appState.selectedElementIds.length 
-        : typeof appState.selectedElementIds === 'object' 
+      const selectedCount = Array.isArray(appState.selectedElementIds)
+        ? appState.selectedElementIds.length
+        : typeof appState.selectedElementIds === 'object'
           ? Object.keys(appState.selectedElementIds).filter(k => appState.selectedElementIds[k] === true).length
           : 0;
       if (selectedCount > 0) {
@@ -128,7 +130,7 @@ export function App() {
         console.log("✗ Selection cleared in onChange");
       }
     }
-    
+
     // Throttle onChange to prevent excessive calls
     if (onChangeThrottleRef.current) {
       clearTimeout(onChangeThrottleRef.current);
@@ -157,6 +159,11 @@ export function App() {
           }
           // Update ref only when there are actual changes
           previousElementsRef.current = elements;
+          try {
+            WorkerClient.updateWhiteboard(COMPONENT_ID, activeElements);
+          } catch (e) {
+            console.error('Failed to send whiteboard update', e);
+          }
         }
       } else {
         // Check for modifications (same count but different properties)
@@ -219,6 +226,11 @@ export function App() {
           });
           // Update ref
           previousElementsRef.current = currentElements;
+          try {
+            WorkerClient.updateWhiteboard(COMPONENT_ID, activeElements);
+          } catch (e) {
+            console.error('Failed to send whiteboard update (periodic)', e);
+          }
         }
       } catch (error) {
         console.error("Error in periodic check:", error);
@@ -239,73 +251,9 @@ export function App() {
 
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative", display: "flex", flexDirection: "column" }}>
-      {/* Custom Top Bar with Account Button */}
-      <div
-        style={{
-          height: "48px",
-          background: "#ffffff",
-          borderBottom: "1px solid #e0e0e0",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 16px",
-          zIndex: 100,
-          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <img
-            src={logoImage}
-            alt="CloudConstruct Logo"
-            style={{
-              width: "32px",
-              height: "32px",
-              objectFit: "contain",
-            }}
-          />
-          <span style={{ fontSize: "16px", fontWeight: "500", color: "#1e1e1e" }}>
-            Excalidraw Live Updates Test
-          </span>
-        </div>
-        <button
-          onClick={() => setIsAccountModalOpen(true)}
-          style={{
-            padding: "6px 12px",
-            background: "#f5f5f5",
-            border: "1px solid #e0e0e0",
-            borderRadius: "4px",
-            fontSize: "14px",
-            fontWeight: "500",
-            color: "#1e1e1e",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-            transition: "background 0.2s",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "#e8e8e8";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "#f5f5f5";
-          }}
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-            <circle cx="12" cy="7" r="4"></circle>
-          </svg>
-          Account
-        </button>
-      </div>
+      <StatusBar onLoginClick={() => setIsAccountModalOpen(true)} />
+      {/* Spacer to account for fixed StatusBar height */}
+      <div style={{ height: 36 }} />
 
       {/* Excalidraw Canvas */}
       <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
@@ -320,7 +268,7 @@ export function App() {
       </div>
 
       {/* Test Panel */}
-      <TestPanel updateService={updateService} />
+      {/*<TestPanel updateService={updateService} />*/}
 
       {/* Account Modal */}
       <AccountModal

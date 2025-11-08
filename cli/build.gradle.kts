@@ -9,22 +9,30 @@ repositories {
 }
 
 dependencies {
-    implementation(platform("io.ktor:ktor-bom:2.3.12"))
-    implementation("io.ktor:ktor-client-core")
-    implementation("io.ktor:ktor-client-java")
-    implementation("io.ktor:ktor-client-websockets")
-    implementation("io.ktor:ktor-client-content-negotiation")
-    implementation("io.ktor:ktor-serialization-kotlinx-json")
+    // Ktor client for WebSocket connections
+    implementation("io.ktor:ktor-client-core:2.3.7")
+    implementation("io.ktor:ktor-client-cio:2.3.7")
+    implementation("io.ktor:ktor-client-websockets:2.3.7")
+    implementation("io.ktor:ktor-client-content-negotiation:2.3.7")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.7")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    // Coroutines for async operations
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
 
-    implementation("com.github.ajalt.clikt:clikt:4.4.0")
-    implementation("com.github.ajalt.mordant:mordant:3.0.0")
+    // JSON serialization
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
 
-    implementation("com.squareup.okio:okio:3.9.0")
+    // YAML parsing for cloudconstruct.yaml
+    implementation("org.yaml:snakeyaml:2.2")
 
+    // Logging
+    implementation("ch.qos.logback:logback-classic:1.4.14")
+    implementation("io.github.microutils:kotlin-logging-jvm:3.0.5")
+
+    // Testing
     testImplementation(kotlin("test"))
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("io.mockk:mockk:1.13.8")
 }
 
 kotlin {

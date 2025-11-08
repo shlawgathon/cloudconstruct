@@ -46,4 +46,31 @@ class ConnectionManager {
         }
         return session
     }
+
+    fun getUserConnectionCounts(userId: String): Pair<Int, Int> {
+        var vsc = 0
+        var exca = 0
+        sessionTokens.forEach { (token, info) ->
+            if (info.userId == userId) {
+                when (info.connectionType) {
+                    ConnectionType.VSC -> if (vscConnections.containsKey(token)) vsc++
+                    ConnectionType.EXCALIDRAW -> if (excalidrawConnections.containsKey(token)) exca++
+                }
+            }
+        }
+        return Pair(vsc, exca)
+    }
+
+    fun getSessionsForUser(userId: String): List<WebSocketSession> {
+        val sessions = mutableListOf<WebSocketSession>()
+        sessionTokens.forEach { (token, info) ->
+            if (info.userId == userId) {
+                when (info.connectionType) {
+                    ConnectionType.VSC -> vscConnections[token]?.let { sessions.add(it) }
+                    ConnectionType.EXCALIDRAW -> excalidrawConnections[token]?.let { sessions.add(it) }
+                }
+            }
+        }
+        return sessions
+    }
 }

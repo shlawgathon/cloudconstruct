@@ -49,9 +49,11 @@ fun Application.configureDatabases()
             {
                 val (id, _) = verified
                 call.sessions.set(UserSession(id))
+                println("[AUTH][LOGIN] user='${body.username}' -> SUCCESS, userId=$id")
                 call.respond(mapOf("userId" to id))
             } else
             {
+                println("[AUTH][LOGIN] user='${body.username}' -> FAILURE")
                 call.respond(HttpStatusCode.Unauthorized)
             }
         }
