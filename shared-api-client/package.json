@@ -1,7 +1,7 @@
 {
   "name": "shared-api-client",
-  "module": "index.ts",
-  "type": "module",
+  "main": "index.js",
+  "types": "index.ts",
   "private": true,
   "devDependencies": {
     "@types/bun": "latest",
