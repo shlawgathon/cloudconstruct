@@ -55,6 +55,17 @@ This will:
 - Compile TypeScript to JavaScript in the `out` directory
 - Build the Next.js app to `ui-app/out`
 
+### Build Output (`/out` folder)
+
+The `/out` folder contains the compiled JavaScript output from TypeScript. This folder is:
+
+- **Required**: VS Code extensions run JavaScript, not TypeScript. The `package.json` points to `"main": "./out/extension.js"` as the entry point.
+- **Auto-generated**: Created automatically when you run `bun run compile` or when the pre-launch task runs during debugging.
+- **Git-ignored**: Already in `.gitignore`, so it won't be committed to version control.
+- **Safe to delete**: You can delete it anytime - it will be regenerated on the next compile.
+
+**Note**: You edit TypeScript files in `/src`, and they compile to JavaScript in `/out`. This is the standard workflow for VS Code extensions. The `/out` folder is a build artifact, similar to how Next.js creates a `.next` folder.
+
 ### Packaging
 
 Package the extension for distribution:
