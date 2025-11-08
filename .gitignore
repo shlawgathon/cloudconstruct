@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 **/node_modules/
+/.pnp
+.pnp.js
 bun.lock
 package-lock.json
 yarn.lock
@@ -13,6 +15,7 @@ out/
 .next/
 .vite/
 *.tsbuildinfo
+next-env.d.ts
 
 # Gradle
 .gradle/
@@ -59,17 +62,26 @@ bun.lockb
 .DS_Store
 Thumbs.db
 *.log
+*.pem
 
 # Testing
 coverage/
 .nyc_output/
 *.lcov
 
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 # Temporary files
 *.tmp
 *.temp
 .cache/
 .temp/
+
+# Vercel
+.vercel
 
 # IntelliJ IDEA
 .idea/
