@@ -5,9 +5,10 @@ import logoImage from '../../logo.png';
 interface StatusBarProps {
   onLoginClick: () => void;
   statusMessage?: string;
+  nextSyncMessage?: string;
 }
 
-export function StatusBar({ onLoginClick, statusMessage }: StatusBarProps) {
+export function StatusBar({ onLoginClick, statusMessage, nextSyncMessage }: StatusBarProps) {
   const [conn, setConn] = useState<ConnectionState>(WorkerClient.getConnectionState());
   const [user, setUser] = useState(WorkerClient.getAuth());
   const [counts, setCounts] = useState(() => WorkerClient.getConnectedClients());
@@ -56,13 +57,16 @@ export function StatusBar({ onLoginClick, statusMessage }: StatusBarProps) {
         </span>
         {counts && (
           <span style={{ fontSize: 12, color: '#374151' }}>
-            VSC: {counts.vsc} · Excalidraw: {counts.excalidraw}
-          </span>
+            WS (CLI: {counts.vsc} · Whiteboard: {counts.excalidraw})
+         </span>
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {statusMessage && (
           <span style={{ fontSize: 12, color: '#1f2937' }}>{statusMessage}</span>
+        )}
+        {nextSyncMessage && (
+          <span style={{ fontSize: 12, color: '#6b7280' }}>{nextSyncMessage}</span>
         )}
         {user.username ? (
           <span style={{ fontSize: 12, color: '#374151' }}>Signed in as <strong>{user.username}</strong></span>

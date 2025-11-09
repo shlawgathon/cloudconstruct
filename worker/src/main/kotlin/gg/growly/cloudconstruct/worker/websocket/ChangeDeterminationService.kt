@@ -59,6 +59,15 @@ class ChangeDeterminationService(
                 globalJson.decodeFromString<List<WhiteboardElement>>(elementsJson)
             }.getOrElse { emptyList() }
 
+            // If no element contains text, do not trigger generation yet
+            val hasAnyText = elements.any { !(it.text.isNullOrBlank()) }
+            if (!hasAnyText) {
+                broadcastToExcalidraw(
+                    WSMessage.StatusUpdate(componentId, ComponentStatus.READY, "Name your component (add a text label) to enable sync.")
+                )
+                continue
+            }
+
             // Broadcast LOADING status
             broadcastToExcalidraw(
                 WSMessage.StatusUpdate(componentId, ComponentStatus.LOADING, "Detected changes, generating specs...")

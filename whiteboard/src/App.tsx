@@ -25,6 +25,7 @@ export function App() {
   const updateService = updateServiceRef.current;
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>("");
+  const [nextSyncMessage, setNextSyncMessage] = useState<string>("");
   // Track last-known componentId based on user selection/edits (element id)
   const currentComponentIdRef = useRef<string | null>(null);
   const previousElementsRef = useRef<ExcalidrawElement[]>([]);
@@ -48,7 +49,7 @@ export function App() {
   const lastSuccessfulComponentIdRef = useRef<string | null>(null);
 
   // Derive component id from current selection or recent single-element edits
-  const deriveComponentId = useCallback((activeElements?: ExcalidrawElement[]) => {
+  const deriveComponentId = useCallback((activeElements?: ExcalidrawElement[], candidates?: string[]) => {
     try {
       const selected = updateService.getSelectedElements();
       if (selected && selected.length > 0) {
@@ -56,21 +57,43 @@ export function App() {
         currentComponentIdRef.current = selected[0].id;
         return currentComponentIdRef.current;
       }
+
+      // If we have explicit candidate ids (e.g., modified/added), prefer when unambiguous
+      if (candidates && candidates.length === 1) {
+        currentComponentIdRef.current = candidates[0];
+        return currentComponentIdRef.current;
+      }
+      if (candidates && candidates.length > 0) {
+        // If multiple candidates, pick the first that exists on canvas
+        const firstOnCanvas = candidates.find(id => activeElements?.some(el => el.id === id));
+        if (firstOnCanvas) {
+          currentComponentIdRef.current = firstOnCanvas;
+          return currentComponentIdRef.current;
+        }
+      }
+
       // If nothing selected, but there's exactly one active element on canvas, use it
       if (activeElements && activeElements.length === 1) {
         currentComponentIdRef.current = activeElements[0].id;
         return currentComponentIdRef.current;
       }
-      // If no single element, but there are active elements and we have no prior id, use the first
-      if ((!currentComponentIdRef.current || currentComponentIdRef.current === '') && activeElements && activeElements.length > 0) {
-        currentComponentIdRef.current = activeElements[0].id;
+
+      // If we previously had an id and it still exists on canvas, keep it
+      if (currentComponentIdRef.current && activeElements?.some(el => el.id === currentComponentIdRef.current)) {
         return currentComponentIdRef.current;
       }
-      // Otherwise, keep whatever was last used (user might be editing text without selection updates)
-      return currentComponentIdRef.current || lastSuccessfulComponentIdRef.current || null;
+
+      // Avoid blindly falling back to lastSuccessful id unless it's still on canvas
+      if (lastSuccessfulComponentIdRef.current && activeElements?.some(el => el.id === lastSuccessfulComponentIdRef.current)) {
+        currentComponentIdRef.current = lastSuccessfulComponentIdRef.current;
+        return currentComponentIdRef.current;
+      }
+
+      // No clear component to target
+      return null;
     } catch (e) {
       console.warn('Failed to derive component id', e);
-      return currentComponentIdRef.current || lastSuccessfulComponentIdRef.current || null;
+      return null;
     }
   }, [updateService]);
 
@@ -138,7 +161,7 @@ export function App() {
           msg.status === ComponentStatus.FAILURE ? 'Failed.' : 'Update';
         // Temporarily show external status message
         uiModeRef.current = 'external';
-        setStatusMessage(`Constructor says: ${msg.message || fallback}`);
+        setStatusMessage(`CloudConstruct says: ${msg.message || fallback}`);
         // After a short delay, allow UI to resume countdown mode
         setTimeout(() => {
           if (uiModeRef.current === 'external') {
@@ -162,20 +185,19 @@ export function App() {
       clearInterval(uiTickIntervalRef.current);
     }
     uiTickIntervalRef.current = setInterval(() => {
-      // If external message is being shown, do not override
-      if (uiModeRef.current === 'external') return;
+      // Compute next-sync message independently from worker status
       if (uiModeRef.current === 'syncing') {
-        setStatusMessage('Syncing changes…');
+        setNextSyncMessage('Syncing changes…');
         return;
       }
       if (uiModeRef.current === 'paused') {
-        setStatusMessage('Editing… sync paused');
+        setNextSyncMessage('Editing… sync paused');
         return;
       }
       // idle countdown
       const now = Date.now();
       const secs = Math.max(0, Math.ceil((nextSyncAtRef.current - now) / 1000));
-      setStatusMessage(`Idle. Next sync in ${secs}s`);
+      setNextSyncMessage(`Idle. Next sync in ${secs}s`);
     }, 1000);
 
     return () => {
@@ -346,8 +368,15 @@ export function App() {
             modified: modified.length,
           });
           try {
-            const componentId = deriveComponentId(activeElements);
-            if (componentId) {
+            const candidateIds = [...added.map(el => el.id), ...modified.map(el => el.id)];
+            const componentId = deriveComponentId(activeElements, candidateIds);
+            // Require at least some text on the canvas before syncing
+            const hasAnyText = activeElements.some((el: any) => typeof el.text === 'string' && el.text.trim().length > 0);
+            if (!hasAnyText) {
+              uiModeRef.current = 'idle';
+              setStatusMessage('Name your component (add a text label) to enable sync.');
+              // Do NOT update previousElementsRef here so that adding text later triggers detection
+            } else if (componentId) {
               uiModeRef.current = 'syncing';
               WorkerClient.updateWhiteboard(componentId, activeElements);
               lastSuccessfulComponentIdRef.current = componentId;
@@ -384,7 +413,7 @@ export function App() {
 
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative", display: "flex", flexDirection: "column" }}>
-      <StatusBar onLoginClick={() => setIsAccountModalOpen(true)} statusMessage={statusMessage} />
+      <StatusBar onLoginClick={() => setIsAccountModalOpen(true)} statusMessage={statusMessage} nextSyncMessage={nextSyncMessage} />
       {/* Spacer to account for fixed StatusBar height */}
       <div style={{ height: 36 }} />
 
