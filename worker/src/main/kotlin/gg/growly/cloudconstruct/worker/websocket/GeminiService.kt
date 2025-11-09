@@ -28,9 +28,22 @@ class GeminiService(
 
     suspend fun suggestSpecPath(context: CodeGenContext, yaml: String, existingFiles: List<String> = emptyList()): String {
         require(!apiKey.isNullOrBlank()) { "gemini.apiKey is required for suggestSpecPath()" }
-        // Ask Gemini to propose a sane, idempotent file path under k8s/, preferring reuse of existing similar files
+        // Ask Gemini to propose a strictly formatted, concise path under k8s/, with a strong bias to reuse.
         val parts = mutableListOf<JsonObject>()
-        parts += JsonObject(mapOf("text" to JsonPrimitive("You propose a single Kubernetes spec path under the 'k8s/' directory for the component described. Respond with just the relative path string. Prefer reusing an existing file if it likely matches the component; otherwise propose a new concise, kebab-case name. No commas, you can have multiple subdirectories. Use a fluxcd or argocd convention if possible.")))
+        parts += JsonObject(mapOf("text" to JsonPrimitive(
+            "Task: Output ONLY a single relative file path under 'k8s/' for the Kubernetes spec. No quotes, no prose, no backticks.\n" +
+            "Rules:\n" +
+            "- Prefer reusing an existing file if it likely matches.\n" +
+            "- Otherwise propose a concise kebab-case filename.\n" +
+            "- Allowed chars: lowercase a-z, 0-9, dashes (-), slashes (/), and a single .yaml extension.\n" +
+            "- No spaces, commas, underscores, or parentheses.\n" +
+            "- Keep base filename short and meaningful (8–30 chars).\n" +
+            "- Up to 3 subdirectories max.\n" +
+            "- Must end with .yaml.\n" +
+            "Examples (bad → good):\n" +
+            "  k8s/web-app-nginx-index-html-static-served hello-world.yaml → k8s/web/nginx-static.yaml\n" +
+            "  k8s/My Service.yaml → k8s/service/my-service.yaml\n"
+        )))
         parts += JsonObject(mapOf("text" to JsonPrimitive("Context whiteboard elements (JSON):")))
         parts += JsonObject(mapOf("text" to JsonPrimitive(Json.encodeToString(context.whiteboard))))
         parts += JsonObject(mapOf("text" to JsonPrimitive("Existing files (newline separated):\n" + existingFiles.joinToString("\n"))))
@@ -40,9 +53,9 @@ class GeminiService(
             contentType(ContentType.Application.Json)
             setBody(req)
         }.body()
-        val path = resp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
-        require(!path.isNullOrBlank()) { "Gemini returned empty path" }
-        return path
+        val raw = resp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+        require(!raw.isNullOrBlank()) { "Gemini returned empty path" }
+        return sanitizePathSuggestion(raw, existingFiles)
     }
 
     suspend fun generateCode(prompt: String, context: CodeGenContext): String {
@@ -100,15 +113,16 @@ class GeminiService(
         return text
     }
 
-    suspend fun generateClusterCheck(specFile: String): String {
+    suspend fun generateClusterCheck(specFile: String, content: String): String {
         require(!apiKey.isNullOrBlank()) { "gemini.apiKey is required for generateClusterCheck()" }
-        // Ask Gemini to generate JS that uses typed k8s clients for readiness, not generic KubernetesObjectApi for status.
-        // It may parse YAML only to extract targets (kind/name/namespace), but readiness must come from typed API/status.
+        // Ask Gemini to generate a SINGLE kubectl command that prints JSON for the target resource(s).
         val parts = mutableListOf<JsonObject>()
         parts += JsonObject(mapOf("text" to JsonPrimitive(
-            "Write a minimal Node.js snippet using '@kubernetes/client-node' that returns the JSON status for a specific service . " +
-                "Return only the essential code (max 10 lines) - no error handling, no comments, no module exports. " +
-                "Just load config, create client, check pod statuses, and console.log the result. The following k8s component you are generating code to describe for is: $specFile"
+            "Output exactly ONE kubectl command (no backticks, no prose) that, when executed, prints JSON describing the Kubernetes resource(s) defined by the provided YAML/spec. " +
+                "Prefer 'kubectl get <kind> <name> -n <namespace> -o json'. If the exact name/kind isn't obvious, use a robust label selector such as 'app.kubernetes.io/name' or 'app' with '--selector' and include '-n <namespace>' if known. " +
+                "If the spec defines a Service and a Deployment, target the primary workload (Deployment/StatefulSet) first; otherwise target the most representative resource from the spec. " +
+                "The command MUST output JSON (use '-o json'). Do not include shell comments or multiple commands. " +
+                "Spec context follows:\n${content}"
         )))
         val req = GeminiRequest(contents = listOf(Content(parts = parts)))
         val resp: GeminiResponse = http.post(endpoint) {
@@ -120,9 +134,9 @@ class GeminiService(
             contentType(ContentType.Application.Json)
             setBody(req)
         }.body()
-        val js = resp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
-        require(!js.isNullOrBlank()) { "Gemini returned empty cluster check module" }
-        return js
+        val cmd = resp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+        require(!cmd.isNullOrBlank()) { "Gemini returned empty cluster check command" }
+        return cmd
     }
 
     suspend fun generateStatusComponent(statusJson: String, context: CodeGenContext): String {
@@ -147,6 +161,104 @@ class GeminiService(
     private fun inferName(context: CodeGenContext): String? {
         val label = context.whiteboard.firstOrNull { it.text?.isNotBlank() == true }?.text
         return label?.lowercase()?.replace(" ", "-")
+    }
+
+    private fun sanitizePathSuggestion(rawInput: String, existingFiles: List<String>): String {
+        // Take first non-empty line and strip code fences/quotes
+        var s = rawInput
+            .lineSequence()
+            .firstOrNull { it.isNotBlank() }?.trim() ?: rawInput.trim()
+        s = s.removePrefix("`").removeSuffix("`")
+        s = s.removePrefix("```").removeSuffix("```")
+        s = s.trim().trim('"', '\'', '`')
+
+        // Normalize slashes and lowercase
+        s = s.replace('\\', '/').lowercase()
+
+        // If the model returned anything like: path: k8s/foo.yaml or in backticks, try to extract
+        val regexPath = Regex("k8s/[^\n`'\"]+")
+        val found = regexPath.find(s)?.value
+        if (found != null) s = found
+
+        // Ensure it starts with k8s/
+        s = if (s.startsWith("k8s/")) s else "k8s/" + s.removePrefix("./").removePrefix("/")
+
+        // Split into segments and sanitize each
+        val parts = s.split('/').toMutableList()
+        // Guarantee first segment is k8s
+        if (parts.firstOrNull() != "k8s") parts.add(0, "k8s")
+
+        // Join the rest back after sanitization
+        val sanitized = buildList {
+            add("k8s")
+            val inner = parts.drop(1)
+            // limit to at most 3 segments (including filename)
+            val limited = if (inner.size > 3) inner.take(2) + inner.last() else inner
+            // sanitize directory segments
+            for (seg in limited.dropLast(1)) {
+                var d = seg
+                d = d.replace("_", "-")
+                d = d.replace(Regex("[^a-z0-9-]"), "-")
+                d = d.replace(Regex("-+"), "-").trim('-')
+                if (d.isBlank()) continue
+                add(d)
+            }
+            // sanitize filename
+            var file = limited.lastOrNull() ?: "spec.yaml"
+            file = file.replace("_", "-")
+            file = file.replace(Regex("[^a-z0-9-.]"), "-")
+            file = file.replace(Regex("-+"), "-")
+            file = file.trim('-')
+
+            // ensure extension .yaml
+            file = when {
+                file.endsWith(".yaml") -> file
+                file.endsWith(".yml") -> file.removeSuffix(".yml") + ".yaml"
+                file.contains('.') -> file.substringBeforeLast('.') + ".yaml"
+                else -> "$file.yaml"
+            }
+
+            // limit base name length to 30
+            val base = file.substringBeforeLast('.')
+            val ext = ".yaml"
+            val trimmedBase = if (base.length > 30) base.take(30).trim('-') else base
+            file = trimmedBase.ifBlank { "spec" } + ext
+
+            add(file)
+        }.joinToString("/")
+
+        // Try to reuse an existing file if similar
+        val normalizedSanitized = normalizedPath(sanitized)
+        val existingNormalizedToOriginal = existingFiles
+            .filter { it.startsWith("k8s/") }
+            .associateBy({ normalizedPath(it) }, { it })
+
+        // Exact match by normalized form
+        existingNormalizedToOriginal[normalizedSanitized]?.let { return it }
+
+        // Try by base file name equality or containment
+        val targetBase = sanitized.substringAfterLast('/')
+            .substringBeforeLast('.')
+        existingFiles.filter { it.startsWith("k8s/") }.forEach { ex ->
+            val exBase = ex.substringAfterLast('/').substringBeforeLast('.')
+            if (exBase == targetBase || exBase.contains(targetBase) || targetBase.contains(exBase)) {
+                return ex
+            }
+        }
+
+        return sanitized
+    }
+
+    private fun normalizedPath(p: String): String {
+        return p.lowercase()
+            .replace('\\', '/')
+            .removePrefix("./")
+            .removePrefix("/")
+            .let { if (it.startsWith("k8s/")) it else "k8s/$it" }
+            .replace(Regex("_"), "-")
+            .replace(Regex("[^a-z0-9-/.]"), "-")
+            .replace(Regex("-+"), "-")
+            .replace(".yml", ".yaml")
     }
 }
 

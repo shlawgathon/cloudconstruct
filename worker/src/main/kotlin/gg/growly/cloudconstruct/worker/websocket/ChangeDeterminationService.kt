@@ -77,8 +77,8 @@ class ChangeDeterminationService(
             val generated = runCatching { gemini.generateCode(prompt, ctx) }
             if (generated.isSuccess) {
                 val yaml = generated.getOrThrow()
-                val name = inferName(elements) ?: componentId
-                val path = "k8s/${name}.yaml"
+                val path = gemini.suggestSpecPath(ctx, yaml, ctx.files)
+                println(path)
 
                 // Broadcast change info
                 broadcastToBoth(

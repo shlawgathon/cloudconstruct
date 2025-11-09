@@ -9,22 +9,32 @@ class MessageHandler(
     private val repo: WsRepository,
     private val gemini: GeminiService
 ) {
+    // Cache generated cluster-check code per spec file so we can send it after apply succeeds
+    private val pendingCheckCodeBySpec: MutableMap<String, String> = mutableMapOf()
+
     private suspend fun handleFileWriteResponse(message: WSMessage.FileWriteResponse, token: String) {
         val componentId = message.componentId ?: "unknown"
         if (message.success) {
-            // Notify UI and trigger cluster check using the written spec file
+            // 1) Inform UI we are applying the spec first
             broadcastToExcalidraw(
                 WSMessage.StatusUpdate(
                     componentId = componentId,
-                    status = ComponentStatus.CHECKING,
-                    message = "Spec saved. Running cluster check..."
+                    status = ComponentStatus.LOADING,
+                    message = "Spec saved. Applying to cluster..."
                 ),
                 token
             )
+
+            // Pre-generate cluster check code, to use after apply succeeds
+            val k8sCheckJs = gemini.generateClusterCheck(message.path, message.content)
+            pendingCheckCodeBySpec[message.path] = k8sCheckJs
+
+            // 2) Ask VSCode client to apply the spec
             broadcastToVSC(
-                WSMessage.ClusterCheckRequest(
+                WSMessage.ClusterApplyRequest(
                     componentId = componentId,
-                    specFile = message.path
+                    specFile = message.path,
+                    k8sCode = null
                 ),
                 token
             )
@@ -44,7 +54,8 @@ class MessageHandler(
         println("[WS][VSC][IN] ${System.currentTimeMillis()} type=${message::class.simpleName}")
         when (message) {
             is WSMessage.FileOperation -> handleFileOperation(message, session)
-            is WSMessage.ClusterCheckRequest -> handleClusterCheck(message, session, token)
+            is WSMessage.ClusterApplyResponse -> handleClusterApplyResponse(message, token)
+            is WSMessage.ClusterCheckResponse -> handleClusterCheck(message, session, token)
             is WSMessage.StatusUpdate -> broadcastToExcalidraw(message, token)
             is WSMessage.FileWriteResponse -> handleFileWriteResponse(message, token)
             else -> println("[WS][VSC][WARN] Unhandled message: ${message::class.simpleName}")
@@ -96,24 +107,51 @@ class MessageHandler(
         broadcastToVSC(response, token)
     }
 
-    private suspend fun handleClusterCheck(message: WSMessage.ClusterCheckRequest, session: WebSocketSession, token: String) {
-        println("[WS][VSC][HANDLE] ClusterCheckRequest componentId=${message.componentId} specFile=${message.specFile}")
-        val k8sCode = gemini.generateClusterCheck(message.specFile)
-        val response = WSMessage.ClusterCheckResponse(
+    private suspend fun handleClusterCheck(message: WSMessage.ClusterCheckResponse, session: WebSocketSession, token: String) {
+        broadcastToExcalidraw(WSMessage.StatusUpdate(
             componentId = message.componentId,
-            status = "checking",
-            k8sCode = k8sCode,
-            errors = null
-        )
-        session.send(Frame.Text(globalJson.encodeToString(WSMessage.serializer(), response)))
-        broadcastToExcalidraw(
-            WSMessage.StatusUpdate(
-                componentId = message.componentId,
-                status = ComponentStatus.CHECKING,
-                message = "Running cluster check..."
-            ),
-            token
-        )
+            status = ComponentStatus.SUCCESS,
+            message = message.status
+        ))
+
+//        session.send(Frame.Text(globalJson.encodeToString(WSMessage.serializer(), response))) OLD
+    }
+
+    private suspend fun handleClusterApplyResponse(message: WSMessage.ClusterApplyResponse, token: String) {
+        val specFile = message.specFile
+        val componentId = message.componentId
+        if (message.success) {
+            // Notify UI that apply succeeded and we're moving to check
+            broadcastToExcalidraw(
+                WSMessage.StatusUpdate(
+                    componentId = componentId,
+                    status = ComponentStatus.CHECKING,
+                    message = "Apply succeeded. Running cluster check..."
+                ),
+                token
+            )
+            val code = pendingCheckCodeBySpec.remove(specFile)
+            // Fall back to generating if not present for any reason
+            val k8sCode = code ?: gemini.generateClusterCheck(specFile, "")
+            broadcastToVSC(
+                WSMessage.ClusterCheckRequest(
+                    componentId = componentId,
+                    specFile = specFile,
+                    k8sCode = k8sCode
+                ),
+                token
+            )
+        } else {
+            val err = message.error ?: "unknown error"
+            broadcastToExcalidraw(
+                WSMessage.StatusUpdate(
+                    componentId = componentId,
+                    status = ComponentStatus.FAILURE,
+                    message = "Cluster apply failed: $err"
+                ),
+                token
+            )
+        }
     }
 
     private suspend fun broadcastToVSC(message: WSMessage, includeToken: String? = null) {

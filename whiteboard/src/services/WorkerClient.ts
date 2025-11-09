@@ -1,4 +1,4 @@
-import { ExcalidrawWorkerClient, type WorkerLogger, type ConnectedClientsUpdateMessage } from '../../../shared-api-client/index';
+import { ExcalidrawWorkerClient, type WorkerLogger, type ConnectedClientsUpdateMessage, type WSMessage, type StatusUpdateMessage } from '../../../shared-api-client/index';
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 
@@ -19,6 +19,7 @@ export interface AuthState {
 }
 
 class WorkerClientService {
+  private statusListeners = new Set<(msg: StatusUpdateMessage) => void>();
   private client: ExcalidrawWorkerClient;
   private logger = new InMemoryLogger();
   private connectedClients: ConnectedClientsUpdateMessage | null = null;
@@ -32,6 +33,13 @@ class WorkerClientService {
   constructor(workerUrl: string) {
     this.client = new ExcalidrawWorkerClient(workerUrl);
     this.client.setLogger(this.logger);
+    // Listen for all messages and forward status updates to listeners
+    this.client.onMessage((msg: WSMessage) => {
+      const t = (msg as any)?.type;
+      if (t === 'statusUpdate') {
+        this.statusListeners.forEach(cb => cb(msg as StatusUpdateMessage));
+      }
+    });
     this.client.onConnectedClientsUpdate((msg) => {
       this.connectedClients = msg;
       this.ccListeners.forEach(cb => cb(msg));
@@ -59,6 +67,10 @@ class WorkerClientService {
 
   onError(cb: (error: Error) => void) { this.errListeners.add(cb); }
   offError(cb: (error: Error) => void) { this.errListeners.delete(cb); }
+
+  // StatusUpdate subscriptions
+  onStatusUpdate(cb: (msg: StatusUpdateMessage) => void) { this.statusListeners.add(cb); }
+  offStatusUpdate(cb: (msg: StatusUpdateMessage) => void) { this.statusListeners.delete(cb); }
 
   getConnectedClients() { return this.connectedClients; }
   getConnectionState() { return this.connectionState; }

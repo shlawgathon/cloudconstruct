@@ -165,7 +165,7 @@ export class LiveUpdateService {
   setElementStatus(elementId: string, status: Status): void {
     // Get current elements - prefer elementsGetter from onChange (most up-to-date)
     let currentElements: ExcalidrawElement[] = [];
-    
+
     if (this.elementsGetter) {
       currentElements = this.elementsGetter();
       console.log("setElementStatus: Got elements from elementsGetter:", currentElements.length);
@@ -191,7 +191,7 @@ export class LiveUpdateService {
     // Apply status to element
     const updatedElement = StatusUpdater.applyStatusToElement(element, status);
     console.log("setElementStatus: Updated element JSON:", JSON.stringify(updatedElement, null, 2));
-    
+
     // Update the elements array
     const updatedElements = currentElements.map((el) =>
       el.id === elementId ? { ...updatedElement, isDeleted: false } : el
@@ -200,11 +200,11 @@ export class LiveUpdateService {
         // Update the scene - need API for this
         // Try to get API from direct reference first, then from getter
         let apiToUse = this.api;
-        
+
         console.log("setElementStatus: Checking API availability...");
         console.log("setElementStatus: this.api:", !!this.api);
         console.log("setElementStatus: this.apiGetter:", !!this.apiGetter);
-        
+
         if (!apiToUse && this.apiGetter) {
           console.log("setElementStatus: API is null, trying to get from apiGetter");
           try {
@@ -220,7 +220,7 @@ export class LiveUpdateService {
             console.error("setElementStatus: Error calling apiGetter:", error);
           }
         }
-        
+
         if (apiToUse) {
           try {
             console.log("setElementStatus: Calling updateScene with", updatedElements.length, "elements");
@@ -331,20 +331,20 @@ export class LiveUpdateService {
       console.log("getSelectedElements: appStateGetter exists:", !!this.appStateGetter);
       console.log("getSelectedElements: elementsGetter exists:", !!this.elementsGetter);
       console.log("getSelectedElements: api exists:", !!this.api);
-      
+
       // Prefer app state from onChange callback (most up-to-date)
       let appState = null;
-      
+
       if (this.appStateGetter) {
         appState = this.appStateGetter();
         console.log("AppState from getter (onChange ref):", appState);
       } else {
         console.warn("appStateGetter is null!");
       }
-      
+
       // Get elements - prefer elementsGetter from onChange (most up-to-date)
       let currentElements: ExcalidrawElement[] = [];
-      
+
       if (this.elementsGetter) {
         currentElements = this.elementsGetter();
         console.log("Got elements from elementsGetter:", currentElements.length);
@@ -357,18 +357,18 @@ export class LiveUpdateService {
         console.error("api:", this.api);
         return [];
       }
-      
+
       // If we don't have appState from getter, try API
       if (!appState && this.api) {
         appState = this.api.getAppState();
         console.log("Got appState from API:", appState);
       }
-      
+
       if (!appState) {
         console.warn("No appState available from either getter or API");
         return [];
       }
-      
+
       console.log("=== getSelectedElements Debug ===");
       console.log("AppState:", appState);
       console.log("AppState keys:", appState ? Object.keys(appState) : []);
@@ -376,14 +376,14 @@ export class LiveUpdateService {
       console.log("selectedElementIds type:", typeof appState?.selectedElementIds);
       console.log("selectedElementIds isArray:", Array.isArray(appState?.selectedElementIds));
       console.log("Current elements count:", currentElements.length);
-      
+
       // Excalidraw's selectedElementIds can be:
       // - An object with element IDs as keys: { "id1": true, "id2": true }
       // - An array of IDs: ["id1", "id2"]
       // - A Set of IDs
       // - null or undefined
       let selectedIds: Set<string> = new Set();
-      
+
       if (appState?.selectedElementIds) {
         if (Array.isArray(appState.selectedElementIds)) {
           selectedIds = new Set(appState.selectedElementIds);
@@ -410,7 +410,7 @@ export class LiveUpdateService {
 
       console.log("Final selectedIds Set:", Array.from(selectedIds));
       console.log("Selected IDs count:", selectedIds.size);
-      
+
       const activeElements = this.filterActiveElements(currentElements);
       console.log("Active elements count:", activeElements.length);
       console.log("Active element IDs:", activeElements.map(el => el.id));
@@ -423,11 +423,11 @@ export class LiveUpdateService {
         }
         return isSelected;
       });
-      
+
       console.log("Selected elements count:", selected.length);
       console.log("Selected element IDs:", selected.map(el => el.id));
       console.log("=== End Debug ===");
-      
+
       return selected;
     } catch (error) {
       console.error("Error getting selected elements:", error);

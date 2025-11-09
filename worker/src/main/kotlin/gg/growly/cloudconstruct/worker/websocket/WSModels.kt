@@ -75,6 +75,7 @@ sealed class WSMessage {
     @SerialName("fileWriteResponse")
     data class FileWriteResponse(
         val path: String,
+        val content: String,
         val success: Boolean,
         val error: String? = null,
         val componentId: String? = null
@@ -170,7 +171,8 @@ sealed class WSMessage {
     @SerialName("clusterCheckRequest")
     data class ClusterCheckRequest(
         val componentId: String,
-        val specFile: String
+        val specFile: String,
+        val k8sCode: String
     ) : WSMessage()
 
     @Serializable

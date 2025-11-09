@@ -61,6 +61,7 @@ data class FileListResponseMessage(
 @SerialName("fileWriteResponse")
  data class FileWriteResponseMessage(
      val path: String,
+     val content: String,
      val success: Boolean,
      val error: String? = null,
      val componentId: String? = null
@@ -75,10 +76,15 @@ data class SpecPathSuggestionMessage(
 ) : WSMessage()
 
 @Serializable
+enum class ComponentStatus {
+    LOADING, SUCCESS, FAILURE, CHECKING, READY
+}
+
+@Serializable
 @SerialName("statusUpdate")
 data class StatusUpdateMessage(
     val componentId: String,
-    val status: String,
+    val status: ComponentStatus,
     val message: String? = null
 ) : WSMessage()
 
@@ -423,17 +429,17 @@ class VSCodeCLI(
             if (!msg.overwrite && Files.exists(filePath)) {
                 println("[FILE_WRITE] File exists and overwrite=false, skipping")
                 // Consider this a success since the desired file is present.
-                sendMessage(FileWriteResponseMessage(path = msg.path, success = true, componentId = msg.componentId))
+                sendMessage(FileWriteResponseMessage(path = msg.path, content = msg.content, success = true, componentId = msg.componentId))
                 return
             }
 
             Files.createDirectories(filePath.parent)
             Files.writeString(filePath, msg.content.removePrefix("```yaml").removeSuffix("```"))
             println("[FILE_WRITE] Wrote file: $filePath")
-            sendMessage(FileWriteResponseMessage(path = msg.path, success = true, componentId = msg.componentId))
+            sendMessage(FileWriteResponseMessage(path = msg.path, content = msg.content, success = true, componentId = msg.componentId))
         } catch (e: Exception) {
             println("[FILE_WRITE][ERR] ${e.message}")
-            sendMessage(FileWriteResponseMessage(path = msg.path, success = false, error = e.message, componentId = msg.componentId))
+            sendMessage(FileWriteResponseMessage(path = msg.path, content = msg.content, success = false, error = e.message, componentId = msg.componentId))
         }
     }
 
@@ -445,13 +451,27 @@ class VSCodeCLI(
         if (!Files.exists(specPath)) {
             sendMessage(ClusterCheckResponseMessage(
                 componentId = msg.componentId,
-                status = "error",
+                status = "ERROR",
                 errors = listOf("Spec file not found: ${msg.specFile}")
             ))
             return
         }
 
         try {
+            // Always run apply before check
+            sendMessage(StatusUpdateMessage(componentId = msg.componentId, status = ComponentStatus.CHECKING, message = "Applying spec before cluster check..."))
+            val apply = applySpecToCluster(msg.specFile)
+            if (!apply.success) {
+                println("[CLUSTER_CHECK] Apply failed: ${apply.error}")
+                sendMessage(ClusterCheckResponseMessage(
+                    componentId = msg.componentId,
+                    status = "ERROR",
+                    errors = listOf(apply.error ?: "Failed to apply spec before check")
+                ))
+                return
+            }
+            sendMessage(StatusUpdateMessage(componentId = msg.componentId, status = ComponentStatus.CHECKING, message = "Apply succeeded. Running cluster check..."))
+
             // If k8sCode is provided by the worker/LLM, execute it directly
             val k8sCode = msg.k8sCode
             if (!k8sCode.isNullOrEmpty()) {
@@ -460,15 +480,15 @@ class VSCodeCLI(
 
                 sendMessage(ClusterCheckResponseMessage(
                     componentId = msg.componentId,
-                    status = result.status,
+                    status = result.status.uppercase(),
                     k8sCode = k8sCode,
                     errors = result.errors
                 ))
             } else {
-                // No code provided, just check if file exists and send ready status
+                // No code provided, just report apply success as ready
                 sendMessage(ClusterCheckResponseMessage(
                     componentId = msg.componentId,
-                    status = "ready",
+                    status = "READY",
                     k8sCode = null,
                     errors = null
                 ))
@@ -476,7 +496,7 @@ class VSCodeCLI(
         } catch (e: Exception) {
             sendMessage(ClusterCheckResponseMessage(
                 componentId = msg.componentId,
-                status = "error",
+                status = "ERROR",
                 errors = listOf("Failed to check cluster: ${e.message}")
             ))
         }
@@ -645,27 +665,90 @@ class VSCodeCLI(
         return try {
             println("[K8S_CODE] Executing code for component: $componentId")
 
-            // Write the code to a temporary file
-            val scriptFile = workDir.resolve(".k8s-check-${componentId}.js")
-            Files.writeString(scriptFile, k8sCode)
-            scriptFile.toFile().deleteOnExit()
+            // Normalize snippet (strip code fences)
+            val snippet = k8sCode
+                .trim()
+                .removePrefix("```javascript")
+                .removePrefix("```js")
+                .removePrefix("```bash")
+                .removePrefix("```sh")
+                .removePrefix("```shell")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
 
-            // If we have a custom kubeconfig, inject it into the script
-            val modifiedCode = if (kubeconfig != null) {
-                // Replace kc.loadFromDefault() with kc.loadFromString()
-                k8sCode.replace(
-                    "kc.loadFromDefault()",
-                    "kc.loadFromString(`${kubeconfig?.replace("`", "\\`")}`)"
-                ).replace(
-                    "kc.loadFromDefault();",
-                    "kc.loadFromString(`${kubeconfig?.replace("`", "\\`")}`);"
-                )
-            } else {
-                k8sCode
+            // If it's a kubectl command, execute it directly
+            if (snippet.startsWith("kubectl ")) {
+                println("[K8S_CODE] Detected kubectl command: $snippet")
+                val processBuilder = ProcessBuilder("bash", "-lc", snippet)
+                    .directory(workDir.toFile())
+                    .redirectErrorStream(false)
+
+                // Set KUBECONFIG environment variable if we have custom config
+                if (kubeconfig != null) {
+                    processBuilder.environment()["KUBECONFIG"] = kubeconfigPath.toString()
+                }
+
+                val process = processBuilder.start()
+                val output = process.inputStream.bufferedReader().readText()
+                val error = process.errorStream.bufferedReader().readText()
+                val exitCode = process.waitFor()
+
+                println("[K8S_CODE] Exit code: $exitCode")
+                println("[K8S_CODE] Output: ${output.take(500)}")
+                if (error.isNotEmpty()) {
+                    println("[K8S_CODE] Error: ${error.take(500)}")
+                }
+
+                return if (exitCode == 0) {
+                    // Try best-effort interpretation of JSON output
+                    val status = runCatching {
+                        val obj = json.parseToJsonElement(output).jsonObject
+                        val statusObj = obj["status"]?.jsonObject
+                        val ready = statusObj?.get("readyReplicas")?.jsonPrimitive?.intOrNull?.let { rr ->
+                            val replicas = statusObj["replicas"]?.jsonPrimitive?.intOrNull ?: 0
+                            replicas > 0 && rr == replicas
+                        } ?: false
+                        when {
+                            ready -> "ready"
+                            else -> "success"
+                        }
+                    }.getOrElse { "success" }
+                    K8sCodeResult(status = status, output = output)
+                } else {
+                    K8sCodeResult(
+                        status = "error",
+                        errors = listOf(error.ifEmpty { "Command failed with exit code $exitCode" })
+                    )
+                }
             }
 
-            // Write modified code
-            Files.writeString(scriptFile, modifiedCode)
+            // Otherwise assume it's Node.js code using @kubernetes/client-node
+            // Detect module system to choose correct file extension under package.json { "type": "module" }
+            val isCommonJs = snippet.contains("require(") && !snippet.contains("import ")
+            val isEsm = snippet.contains("import ") || snippet.contains("export ")
+            val ext = when {
+                isEsm -> ".mjs"
+                isCommonJs -> ".cjs"
+                else -> ".cjs" // default to CJS to allow require()
+            }
+            val scriptFile = workDir.resolve(".k8s-check-${componentId}${ext}")
+
+            val sourceWithConfig = if (kubeconfig != null) {
+                // Replace default loading with inline kubeconfig string and prepend variable
+                val replaced = snippet.replace("kc.loadFromDefault()", "kc.loadFromString(kubeConfigString)")
+                """
+                const kubeConfigString = `
+                $kubeconfig
+                `;
+                $replaced
+                """.trimIndent()
+            } else {
+                snippet
+            }
+
+            Files.writeString(scriptFile, sourceWithConfig)
+            scriptFile.toFile().deleteOnExit()
 
             // Execute the code using Node.js
             val processBuilder = ProcessBuilder("node", scriptFile.toString())
@@ -702,7 +785,7 @@ class VSCodeCLI(
                         status = when {
                             ready -> "ready"
                             exists -> "exists"
-                            else -> "not_found"
+                            else -> "success"
                         },
                         output = output
                     )

@@ -782,7 +782,7 @@ export class WhiteboardMonitor {
             if (elementsHash !== this.lastElementsHash) {
                 this.lastElementsHash = elementsHash;
                 const screenshot = this.getScreenshot();
-                this.client.updateWhiteboard(componentId, elements, screenshot);
+                this.client.updateWhiteboard(elements, screenshot);
             }
         }, this.interval);
     }
