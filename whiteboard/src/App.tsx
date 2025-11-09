@@ -129,6 +129,7 @@ export function App() {
     const handler = (msg: StatusUpdateMessage) => {
       try {
         const status = mapStatus(msg.status);
+        console.log(status)
         // componentId is expected to be the element ID on the canvas
         updateService.setElementStatus(msg.componentId, status);
         const fallback = msg.status === ComponentStatus.LOADING ? 'Working…' :
